@@ -16,15 +16,14 @@ if __name__ == "__main__":
     parser.add_argument("--images", type=str, help="The path to images to use for distillation")
     parser.add_argument("--output_dir", type=str, help="The directory to store checkpoints and training visualizations.")
     parser.add_argument("--model_name", type=str, default="casvit", help="The NanoSAM2 model name.")
-    parser.add_argument("--student_size", type=int, default=1024, help="The size of image to feed to the student during distillation.")
     parser.add_argument("--num_images", type=int, default=None, help="Limit the number of images per epoch.")
     parser.add_argument("--num_epochs", type=int, default=100, help="The number of training epochs.")
     parser.add_argument("--batch_size", type=int, default=12, help="The batch size.")
     parser.add_argument("--num_workers", type=int, default=8, help="The number of data loader workers.")
     parser.add_argument("--learning_rate", type=float, default=3e-4, help='The learning rate.')
 
-    parser.add_argument("--checkpoint", type=str, default="sam2_checkpoints/sam2.1_hiera_small.pt", help="The path to a checkpoint to resume training.")
-    parser.add_argument("--sam2_config", type=str, default="sam2.1_hiera_s", help="The path to a checkpoint to resume training.")
+    parser.add_argument("--checkpoint", type=str, default="sam2_checkpoints/sam2.1_hiera_large.pt", help="The path to a checkpoint to resume training.")
+    parser.add_argument("--sam2_config", type=str, default="sam2.1_hiera_l", help="The path to a checkpoint to resume training.")
     parser.add_argument("--nanosam2_config", type=str, default="nanosam2.1_casvit", help="The path to a checkpoint to resume training.")
     parser.add_argument("--loss", type=str, default="huber", choices=["huber", "l1", "mse"], help="The loss function to use for distillation.")
     args = parser.parse_args()
@@ -36,6 +35,9 @@ if __name__ == "__main__":
             device="cuda", mode="eval", apply_postprocessing=False, load_image_encoder=True)
     nanosam21 = build_sam2(args.nanosam2_config, ckpt_path=args.checkpoint, 
             device="cuda", mode="eval", apply_postprocessing=False, load_image_encoder=False)
+
+    if nanosam21.image_size != sam21.image_size:
+        raise ValueError(f"Image size of student and teacher must be the same, got {nanosam21.image_size} and {sam21.image_size}")
 
     if args.loss == "huber":
         loss_function = F.huber_loss
@@ -49,7 +51,8 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(nanosam21.image_encoder.parameters(), lr=args.learning_rate)
     scaler = torch.amp.GradScaler("cuda")  # Initialize the GradScaler
 
-    dataset = SA1Folder([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], args.images)
+    dataset = SA1Folder([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], args.images, resolution=sam21.image_size)
+    #dataset = SA1Folder([0, 1, 2], args.images, resolution=sam21.image_size)
 
     if args.num_images is not None:
         dataset, _ = random_split(dataset, [args.num_images, len(dataset) - args.num_images])
@@ -77,7 +80,7 @@ if __name__ == "__main__":
             image = image.cuda()
             if len(image) != args.batch_size:
                 continue
-            image_cnn = F.interpolate(image, (args.student_size, args.student_size), mode="area")
+            image_cnn = F.interpolate(image, (sam21.image_size, sam21.image_size), mode="area")
 
             with torch.no_grad():
                 with torch.amp.autocast("cuda", torch.bfloat16):  # Enable mixed precision

@@ -78,7 +78,8 @@ if __name__ == "__main__":
     )
 
     sam21 = build_sam2(args.sam2_config, ckpt_path=args.checkpoint, 
-                       device="cuda", mode="eval", apply_postprocessing=False, load_image_encoder=True)
+                       device="cuda", mode="eval", 
+                       apply_postprocessing=False, load_image_encoder=True)
     predictor = SAM2ImagePredictor(sam21)
 
     results = []
@@ -98,10 +99,18 @@ if __name__ == "__main__":
             mask = dataset.coco.annToMask(ann)
             mask_coco = (mask > 0)
             mask_sam = predict_box(predictor, image, box, set_image=(j==0))
-            # plot result
-            #plt.imshow(mask_coco)
-            #plt.imshow(mask_sam, alpha=0.5)
-            #plt.show()
+            # plot masks over rgb image, both the ground truth and the predicted mask
+            # plot side by side
+            # plt.figure(figsize=(10, 5))
+            # plt.subplot(1, 2, 1)
+            # plt.imshow(image)
+            # plt.imshow(mask_coco, alpha=0.5)
+            # draw_box(box)
+            # plt.subplot(1, 2, 2)
+            # plt.imshow(image)
+            # plt.imshow(mask_sam, alpha=0.5)
+            # draw_box(box)
+            # plt.show()
             result = {
                 "id": ann['id'],
                 "area": ann['area'],

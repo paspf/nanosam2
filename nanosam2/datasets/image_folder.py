@@ -113,54 +113,9 @@ class ResizeLongestSide:
         neww = int(neww + 0.5)
         newh = int(newh + 0.5)
         return (newh, neww)
-    
-def default_transform():
-    transform = Compose([
-        Resize((1024, 1024)),
-        ToTensor(),
-        Normalize(
-            mean=[123.675/255, 116.28/255, 103.53/255],
-            std=[58.395/255, 57.12/255, 57.375/255]
-        )
-    ])
-    return transform
 
-
-def static_transform(x, img_size=1024):
-    """Normalize pixel values and pad to a square input."""
-    # Normalize colors
-    transform = ResizeLongestSide(img_size)
-    x = transform.apply_image(x)
-    x = torch.as_tensor(x)
-    x = x.permute(2, 0, 1).contiguous() 
-
-    pixel_mean = torch.Tensor([123.675, 116.28, 103.53]).view(-1, 1, 1)
-    pixel_std = torch.Tensor([58.395, 57.12, 57.375]).view(-1, 1, 1)
-    x = (x - pixel_mean) / pixel_std
-
-    # Pad
-    h, w = x.shape[-2:]
-    padh = img_size - h
-    padw = img_size - w
-    x = F.pad(x, (0, padw, 0, padh))
-    return x / 255.0
-
-class ImageFolder:
-    def __init__(self, root: str, transform = None):
-        self.root = root
-        image_paths = glob.glob(os.path.join(root, "*.jpg"))
-        self.image_paths = image_paths
-
-    def __len__(self) -> int:
-        return len(self.image_paths)
-    
-    def __getitem__(self, index):
-        image = PIL.Image.open(self.image_paths[index]).convert("RGB")
-        image = self.transform(image)
-        return self.image_paths[index], image
-    
 class SA1Folder:
-    def __init__(self, sa1_datasets: list, root: str):
+    def __init__(self, sa1_datasets: list, root: str, resolution: int):
         self.root = root
         train_dirs = ["sa_" + str(i).zfill(6) for i in sa1_datasets]
         self.jpg_paths = []
@@ -169,7 +124,7 @@ class SA1Folder:
 
         print(f"Found {len(self.jpg_paths)} jpg files in {root}")
 
-        self.resolution = 1024
+        self.resolution = resolution
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
         self.to_tensor = ToTensor()
@@ -190,56 +145,3 @@ class SA1Folder:
         image_t = self.to_tensor(image)
         image_t = self.transform(image_t)
         return image_t
-    
-class NpySA1Folder:
-    def __init__(self, sa1_datasets: list, root: str):
-        self.root = root
-        train_dirs = ["sa_" + str(i).zfill(6) for i in sa1_datasets]
-        self.npy_paths = []
-        for train_dir in train_dirs:
-            self.npy_paths += glob.glob(os.path.join(root, train_dir, "*.npy"))
-
-        print(f"Found {len(self.npy_paths)} npy files in {root}")
-        # self.transform = default_transform()
-
-    def __len__(self) -> int:
-        return len(self.npy_paths)
-    
-    def __getitem__(self, index):
-        image = np.asarray(PIL.Image.open(self.npy_paths[index].replace("npy", "jpg")).convert("RGB"))
-        image = static_transform(image)
-        return image, np.load(self.npy_paths[index]).squeeze()   
-
-class NpySA1ImageFolder:
-    def __init__(self, sa1_datasets: list, root: str):
-        self.root = root
-        train_dirs = ["sa_" + str(i).zfill(6) for i in sa1_datasets]
-        self.npy_paths = []
-        for train_dir in train_dirs:
-            self.npy_paths += glob.glob(os.path.join(root, train_dir, "*.jpg"))
-
-        print(f"Found {len(self.npy_paths)} npy files in {root}")
-
-    def __len__(self) -> int:
-        return len(self.npy_paths)
-    
-    def __getitem__(self, index):
-        img_path = self.npy_paths[index].replace("npy", "jpg")
-        image = np.asarray(PIL.Image.open(img_path).convert("RGB"))
-        image = static_transform(image)
-        return img_path, image
-
-
-class NpyFolder:
-    def __init__(self, root: str):
-        self.root = root
-        self.npy_paths = glob.glob(os.path.join(root, "*.npy"))
-
-        self.transform = default_transform()
-    def __len__(self) -> int:
-        return len(self.npy_paths)
-    
-    def __getitem__(self, index):
-        image = PIL.Image.open(self.npy_paths[index].replace("npy", "jpg")).convert("RGB")
-        image = self.transform(image)
-        return image, np.load(self.npy_paths[index]).squeeze()   

@@ -12,9 +12,9 @@ import numpy as np
 import torch
 from PIL.Image import Image
 
-from sam2.modeling.sam2_base import SAM2Base
+from nanosam2.sam2.modeling.sam2_base import SAM2Base
 
-from sam2.utils.transforms import SAM2Transforms
+from nanosam2.sam2.utils.transforms import SAM2Transforms
 
 
 class SAM2ImagePredictor:
@@ -59,11 +59,9 @@ class SAM2ImagePredictor:
         self.mask_threshold = mask_threshold
 
         # Spatial dim for backbone feature maps
-        self._bb_feat_sizes = [
-            (256, 256),
-            (128, 128),
-            (64, 64),
-        ]
+        # tanks for the comment here https://github.com/facebookresearch/sam2/issues/138#issuecomment-2269907504
+        hires_size = self.model.image_size // 4
+        self._bb_feat_sizes = [[hires_size // (2**k)]*2 for k in range(3)]
 
     @classmethod
     def from_pretrained(cls, model_id: str, **kwargs) -> "SAM2ImagePredictor":

@@ -14,11 +14,7 @@
 # limitations under the License.
 
 
-import torch
 from torch.utils.data import Dataset
-from torchvision import transforms
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 from pycocotools.coco import COCO
 import PIL.Image as Image
 import os

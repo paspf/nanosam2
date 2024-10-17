@@ -75,7 +75,7 @@ def resnet50():
 if __name__ == "__main__":
     model = resnet18()
     print(model)
-    x = torch.randn(1, 3, 1024, 1024)
+    x = torch.randn(1, 3, 512, 512)
     y = model(x)
     for i in range(len(y)):
         print(f"Feature map {i+1} shape: {y[i].shape}")
