@@ -61,5 +61,6 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s/coco_re
 ```
 
 ### Todo 
-[ ] Upload trained Resnet18 and Casvit_s backbones
-[ ] Add a video segmentation demo
+
+- [ ] Upload trained Resnet18 and Casvit_s backbones
+- [ ] Add a video segmentation demo
