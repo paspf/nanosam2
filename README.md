@@ -25,7 +25,7 @@ All experiments were conducted on a RTX 4090 GPU. So you might need to adjust th
 python nanosam2/tools/train_from_images.py --images /path/to/images --output_dir results/sam2.1_hiera_s_resnet18 --model_name resnet18 --nanosam2_config nanosam2.1_resnet18 --sam2_config sam2.1_hiera_s --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 
 ```
 
-### Evaluate on the validation set
+## Evaluate on the validation set
 Download Coco 2017 validation images and annotations from [here](https://cocodataset.org/#download), and evaluate the model:
 ```bash
 python nanosam2/tools/eval_coco.py --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --sam2_config nanosam2.1_resnet18 --output results/sam2.1_hiera_s_resnet18/coco_results.json
@@ -33,12 +33,23 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s_resnet1
 ```
 
 
-### Results
+## Results FP32
 Each backbone was trained for 10 epochs on 14 SA1 datasets, i.e. ~175k images.
 | Backbone | num_epochs | mIoU  All | mIoU Small | mIoU Medium | mIoU Large |
 | -------- | -------- | -------- | -------- | -------- | -------- |
 | resnet18 | 10 | 0.69 | 0.62 | 0.73 | 0.76 |
 | casvit_s | 10 | 0.71 | 0.64 | 0.75 | 0.78 |
+
+## Results QAT
+QAT was initialized with the result of FP32 training. Casvit fails to train for now.
+Probably need to fuse some layers here. A subset of 30k frames was used and the networks are
+trained for 20 epochs. Learning rate was set to 1e-4.
+
+| Backbone | num_epochs | mIoU  All | mIoU Small | mIoU Medium | mIoU Large |
+| -------- | -------- | -------- | -------- | -------- | -------- |
+| resnet18_q | 20 | 0.67 | 0.61 | 0.71 | 0.72 |
+| casvit_s_q | fails to train | - | - | - | - |
+
 
 ### Testing SAM2.1 Hiera backbones with different resolutions
 Change the image size in the config file, and evaluate on coco val2017. It seems that performance is sensitive to the image size, and the best results were obtained with the training resolution of 1024. So I would not recommend to use smaller resolutions for distillation. 
