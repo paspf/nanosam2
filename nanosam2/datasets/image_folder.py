@@ -145,3 +145,33 @@ class SA1Folder:
         image_t = self.to_tensor(image)
         image_t = self.transform(image_t)
         return image_t
+
+class CocoFolder:
+    def __init__(self, root: str, resolution: int):
+        self.root = root
+
+        self.jpg_paths = glob.glob(os.path.join(root, "*.jpg"))
+
+        print(f"Found {len(self.jpg_paths)} jpg files in {root}")
+
+        self.resolution = resolution
+        self.mean = [0.485, 0.456, 0.406]
+        self.std = [0.229, 0.224, 0.225]
+        self.to_tensor = ToTensor()
+        self.transform = torch.jit.script(
+            torch.nn.Sequential(
+                RandomResizedCrop((self.resolution, self.resolution)),
+                Normalize(self.mean, self.std),
+            )
+        )
+
+    def __len__(self) -> int:
+        return len(self.jpg_paths)
+    
+    def __getitem__(self, index):
+        image = np.asarray(PIL.Image.open(self.jpg_paths[index]).convert("RGB"))
+        # Make a writable copy of the array
+        image = np.copy(image)
+        image_t = self.to_tensor(image)
+        image_t = self.transform(image_t)
+        return image_t
