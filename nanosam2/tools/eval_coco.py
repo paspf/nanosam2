@@ -70,6 +70,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default="results/sam2.1_hiera_s_resnet18/checkpoint.pth",  help="The path to a checkpoint to resume training.")
     parser.add_argument("--sam2_config", type=str, default="nanosam2.1_resnet18", help="Sam2 config name, e.g. sam2.1_hiera_s")
     parser.add_argument("--output", type=str, default="data/coco_results.json")
+    parser.add_argument('-p', '--plot', action='store_true', help='Create plots', default=False)
     args = parser.parse_args()
         
     dataset = CocoDetection(
@@ -100,18 +101,20 @@ if __name__ == "__main__":
             mask = dataset.coco.annToMask(ann)
             mask_coco = (mask > 0)
             mask_sam = predict_box(predictor, image, box, set_image=(j==0))
-            # plot masks over rgb image, both the ground truth and the predicted mask
-            # plot side by side
-            plt.figure(figsize=(10, 5))
-            plt.subplot(1, 2, 1)
-            plt.imshow(image)
-            plt.imshow(mask_coco, alpha=0.5)
-            draw_box(box)
-            plt.subplot(1, 2, 2)
-            plt.imshow(image)
-            plt.imshow(mask_sam, alpha=0.5)
-            draw_box(box)
-            plt.show()
+
+            if args.plot:
+                # plot masks over rgb image, both the ground truth and the predicted mask
+                # plot side by side
+                plt.figure(figsize=(10, 5))
+                plt.subplot(1, 2, 1)
+                plt.imshow(image)
+                plt.imshow(mask_coco, alpha=0.5)
+                draw_box(box)
+                plt.subplot(1, 2, 2)
+                plt.imshow(image)
+                plt.imshow(mask_sam, alpha=0.5)
+                draw_box(box)
+                plt.show()
             result = {
                 "id": ann['id'],
                 "area": ann['area'],
