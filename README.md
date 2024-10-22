@@ -70,6 +70,32 @@ and then compute the mIoU:
 ```bash
 python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s/coco_results.json --size all (or small, medium, large)
 ```
+## Runtime benchmarks
+Benchmarks executed on RTX3090 and AMD Ryzen 9 5900X 12-Core.
+
+### Resnet18
+| device | dtype | batch_size | FPS |
+| -------- | -------- | -------- | -------- |
+| CPU | float32 | 1 | 4.9 (5.7) |
+| CUDA | float32 | 1 | 150.2 (194.3) | 
+| CUDA | float16 | 1 | 195.6 (368.3) | 
+| CUDA | bfloat16 | 1 | 184.3 (352.8) | 
+
+### Casvit_s
+|  device | dtype | batch_size | FPS (with torch.compile)|
+| -------- | -------- | -------- | -------- |
+| CPU | float32 | 1 | 2.2 (5.0) |
+| CUDA | float32 | 1 | 72.9 (111.2) | 
+| CUDA | float16 | 1 | 81.4 (100.4) | 
+| CUDA | bfloat16 | 1 | 78.7 (102.6) | 
+
+### Hiera_s
+|  device | dtype | batch_size | FPS (with torch.compile)|
+| -------- | -------- | -------- | -------- |
+| CPU | float32 | 1 | 1.1 (1.2) |
+| CUDA | float32 | 1 | 28.5 (35.7) | 
+| CUDA | float16 | 1 | 62.0 (93.3) | 
+| CUDA | bfloat16 | 1 | 60.1 (92.4) | 
 
 ### Todo 
 
