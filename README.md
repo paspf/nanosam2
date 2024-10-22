@@ -74,7 +74,7 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s/coco_re
 Benchmarks executed on RTX3090 and AMD Ryzen 9 5900X 12-Core.
 
 ### Resnet18
-| device | dtype | batch_size | FPS |
+| device | dtype | batch_size | FPS (with torch.compile) |
 | -------- | -------- | -------- | -------- |
 | CPU | float32 | 1 | 4.9 (5.7) |
 | CUDA | float32 | 1 | 150.2 (194.3) | 
