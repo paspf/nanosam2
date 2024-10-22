@@ -3,6 +3,15 @@ This repository is inspired by https://github.com/NVIDIA-AI-IOT/nanosam and adap
 Although the inference speed of the SAM2.1 Hiera backbones is already quite fast on GPUs, it is still difficult to deploy on edge devices.
 This repository aims to provide a more efficient alternative for SAM2.1 inference, with a focus on backbones that are smaller and faster to deploy.
 
+
+## Dependencies
+
+To train and run the evaluation, the following packages are required:
+
+```
+pip install matplotlib torchvision tqdm hydra-core pycocotools requests
+```
+
 ## Prepare images
 Download the chunks from the [SA1 dataset](https://ai.meta.com/datasets/segment-anything-downloads/) that you want to train on, and put them in a folder. For example:
 ```
@@ -16,6 +25,15 @@ data/
         ...
 ```
 You can then point the training script to this folder.
+
+### Use Segment Anything Download Script
+
+Instead of downloading and extracting the chunks manually, you can use the [download script](tools/download_sa_dataset.py). Download the textfile containing the list of all links and provide it to the download script.
+
+```
+python tools/download_sa_dataset.py links.txt -d <Destination> -n <Number of Chunks> -e
+```
+
 
 ## Train with different backbone
 All experiments were conducted on a RTX 4090 GPU. So you might need to adjust the batch size for your GPU.
