@@ -47,6 +47,7 @@ class SAM2VideoPredictor(SAM2Base):
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
         async_loading_frames=False,
+        disable_prints=False
     ):
         """Initialize an inference state."""
         compute_device = self.device  # device of the model
@@ -56,6 +57,7 @@ class SAM2VideoPredictor(SAM2Base):
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            disable_prints=disable_prints
         )
         inference_state = {}
         inference_state["images"] = images
@@ -666,6 +668,7 @@ class SAM2VideoPredictor(SAM2Base):
         start_frame_idx=None,
         max_frame_num_to_track=None,
         reverse=False,
+        disable_prints=False,
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.propagate_in_video_preflight(inference_state)
@@ -700,7 +703,7 @@ class SAM2VideoPredictor(SAM2Base):
             )
             processing_order = range(start_frame_idx, end_frame_idx + 1)
 
-        for frame_idx in tqdm(processing_order, desc="propagate in video"):
+        for frame_idx in tqdm(processing_order, desc="propagate in video", disable=disable_prints):
             # We skip those frames already in consolidated outputs (these are frames
             # that received input clicks or mask). Note that we cannot directly run
             # batched forward on them via `_run_single_frame_inference` because the
