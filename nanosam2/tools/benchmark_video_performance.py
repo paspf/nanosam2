@@ -10,8 +10,6 @@
 import os
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-from PIL import Image
 import itertools
 import time
 from nanosam2.sam2.build_sam import build_sam2_video_predictor
@@ -30,6 +28,7 @@ class BenchmarkVideoPerformance:
                 model:ModelSource, 
                 device, 
                 compile_settings:list,
+                compile_backend:str
                 ):
             self.model = model
             self.device = device
@@ -38,6 +37,7 @@ class BenchmarkVideoPerformance:
             self.compile_sam_mask_decoder = compile_settings[2]
             self.compile_sam_prompt_encoder = compile_settings[3]
             self.compile_memory_encoder = compile_settings[4]
+            self.compile_backend = compile_backend
 
             # Results
             self.total_runtime = None
@@ -50,12 +50,15 @@ class BenchmarkVideoPerformance:
         devices:list,
         models:list,
         compile_settings:list=None,
+        compile_backend:str="inductor",
         iterations:int=1):
         self.video_dir = video_dir
         self.devices = devices
         self.models = models
         self.compile_settings = compile_settings
+        self.compile_backend = compile_backend
         self.iterations = iterations
+    
         # Check if auto devices is active:
         if isinstance(self.devices[0], str):
             if self.devices[0] == "auto":
@@ -102,7 +105,7 @@ class BenchmarkVideoPerformance:
             for d in self.devices:
                 self.hardware_prep(d)
                 for cs in self.compile_settings:
-                    self.b_stats.append(self.inference(self.BenchmarkIterationMetadata(m, d, cs)))
+                    self.b_stats.append(self.inference(self.BenchmarkIterationMetadata(m, d, cs, self.compile_backend)))
                     print(f"Running benchmark {b_counter}/{num_of_benchmarks} ")
                     b_counter += 1
 
@@ -113,17 +116,18 @@ class BenchmarkVideoPerformance:
                   ) -> BenchmarkIterationMetadata:
         predictor = build_sam2_video_predictor(bim.model.cfg, bim.model.checkpoint, device=bim.device)
 
+        
         # Compile Model
         if bim.compile_encoder:
-            predictor.image_encoder = torch.compile(predictor.image_encoder)
+            predictor.image_encoder = torch.compile(predictor.image_encoder, backend=bim.compile_backend, dynamic=False)
         if bim.compile_memory_attention:
-            predictor.memory_attention = torch.compile(predictor.memory_attention)
+            predictor.memory_attention = torch.compile(predictor.memory_attention, backend=bim.compile_backend)
         if bim.compile_sam_mask_decoder:
-            predictor.sam_mask_decoder = torch.compile(predictor.sam_mask_decoder)
+            predictor.sam_mask_decoder = torch.compile(predictor.sam_mask_decoder, backend=bim.compile_backend)
         if bim.compile_sam_prompt_encoder:
-            predictor.sam_prompt_encoder = torch.compile(predictor.sam_prompt_encoder)
+            predictor.sam_prompt_encoder = torch.compile(predictor.sam_prompt_encoder, backend=bim.compile_backend)
         if bim.compile_memory_encoder:
-            predictor.memory_encoder = torch.compile(predictor.memory_encoder)
+            predictor.memory_encoder = torch.compile(predictor.memory_encoder, backend=bim.compile_backend)
 
         inference_state = predictor.init_state(video_path=self.video_dir, disable_prints=True)
         predictor.reset_state(inference_state)
@@ -204,15 +208,27 @@ if __name__ == "__main__":
             print("Please provide video path.")
             exit()
 
+    use_zentorch = False
+    if use_zentorch:
+        # https://www.amd.com/en/developer/zendnn.html
+        import zentorch
+        compile_backend="zentorch"
+    else:
+        compile_backend="inductor"
+
     
-    devices = [torch.device("mkldnn"), torch.device("cpu")]
+    devices = [torch.device("cuda")]
     # devices = ["auto"]
 
     models = [
         ModelSource("nanosam2", "results/sam2.1_hiera_s_resnet18/checkpoint.pth", "../sam2_configs/nanosam2.1_resnet18.yaml"),
         ModelSource("sam2.1_small", "sam2_checkpoints/sam2.1_hiera_small.pt", "../sam2_configs/sam2.1_hiera_s.yaml")
         ]
-    #bvp = BenchmarkVideoPerformance(args.video, devices, models, compile_settings=[[False, False, False, False, False]], iterations=5)
-    bvp = BenchmarkVideoPerformance(args.video, devices, models, iterations=5)
+    bvp = BenchmarkVideoPerformance(args.video, devices, models, compile_settings=[[False, False, False, False, False],
+                                                                                   [True, False, False, False, False],
+                                                                                   [True, True, False, False, True]], 
+                                                                                   compile_backend=compile_backend,
+                                                                                   iterations=5)
+    #bvp = BenchmarkVideoPerformance(args.video, devices, models, iterations=5)
     bvp.run()
     bvp.print_results()
