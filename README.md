@@ -45,12 +45,23 @@ python tools/download_sa_dataset.py links.txt -d <Destination> -n <Number of Chu
 
 Get the a original SAM2 checkpoint as described in the SAM2 repository. This checkpoint is required for the teaching network.
 
-## Train with different backbone
+## Train
+
 All experiments were conducted on a RTX 4090 GPU. So you might need to adjust the batch size for your GPU.
+
+In the [train.py](nanosam2/tools/train.py.py).
+ file, adjust the data set chunks you want to use for training (seach for `SA1Folder` in `train.py`).
+
 
 ### Train with resnet18 backbone and distill from sam2.1_hiera_s
 ```bash
-python nanosam2/tools/train_from_images.py --images /path/to/images --output_dir results/sam2.1_hiera_s_resnet18 --model_name resnet18 --nanosam2_config nanosam2.1_resnet18 --sam2_config sam2.1_hiera_s --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 
+python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam2.1_hiera_s_resnet18 --model_name resnet18 --nanosam2_config nanosam2.1_resnet18 --sam2_config sam2.1_hiera_s --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 
+```
+
+### Train with MobileNetv3 Large backbone and distill from sam2.1_hiera_s
+
+```bash
+python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam2.1_hiera_s_mobilenetV3_large --nanosam2_config nanosam2.1_mobilenet_v3_large --sam2_config sam2.1_hiera_s --teacher_checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 --coco_root /path/to/coco --coco_ann /path/to/coco/annotations
 ```
 
 ## Evaluate on the validation set
