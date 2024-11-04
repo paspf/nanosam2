@@ -65,6 +65,7 @@ python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam
 ```
 
 ## Evaluate on the validation set
+
 Download Coco 2017 validation images and annotations from [here](https://cocodataset.org/#download), and evaluate the model:
 ```bash
 python nanosam2/tools/eval_coco.py --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --sam2_config nanosam2.1_resnet18 --output results/sam2.1_hiera_s_resnet18/coco_results.json
@@ -73,11 +74,13 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s_resnet1
 
 
 ## Results FP32
+
 Each backbone was trained for 10 epochs on 14 SA1 datasets, i.e. ~175k images.
 | Backbone | num_epochs | mIoU  All | mIoU Small | mIoU Medium | mIoU Large |
 | -------- | -------- | -------- | -------- | -------- | -------- |
 | resnet18 | 10 | 0.69 | 0.62 | 0.73 | 0.76 |
 | casvit_s | 10 | 0.71 | 0.64 | 0.75 | 0.78 |
+| mobilenetV3 large | 10 | 0.68 | 0.60 | 0.71 | 0.75 |
 
 ## Results QAT
 QAT was initialized with the result of FP32 training. Casvit fails to train for now.
