@@ -114,6 +114,7 @@ class AsyncVideoFrameLoader:
         img_mean,
         img_std,
         compute_device,
+        disable_prints=False
     ):
         self.img_paths = img_paths
         self.image_size = image_size
@@ -136,7 +137,7 @@ class AsyncVideoFrameLoader:
         # load the rest of frames asynchronously without blocking the session start
         def _load_frames():
             try:
-                for n in tqdm(range(len(self.images)), desc="frame loading (JPEG)"):
+                for n in tqdm(range(len(self.images)), desc="frame loading (JPEG)", disable=disable_prints):
                     self.__getitem__(n)
             except Exception as e:
                 self.exception = e
@@ -177,6 +178,7 @@ def load_video_frames(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    disable_prints=False
 ):
     """
     Load the video frames from video_path. The frames are resized to image_size as in
@@ -203,6 +205,7 @@ def load_video_frames(
             img_std=img_std,
             async_loading_frames=async_loading_frames,
             compute_device=compute_device,
+            disable_prints=disable_prints
         )
     else:
         raise NotImplementedError(
@@ -218,6 +221,7 @@ def load_video_frames_from_jpg_images(
     img_std=(0.229, 0.224, 0.225),
     async_loading_frames=False,
     compute_device=torch.device("cuda"),
+    disable_prints=False
 ):
     """
     Load the video frames from a directory of JPEG files ("<frame_index>.jpg" format).
@@ -261,11 +265,12 @@ def load_video_frames_from_jpg_images(
             img_mean,
             img_std,
             compute_device,
+            disable_prints=disable_prints
         )
         return lazy_images, lazy_images.video_height, lazy_images.video_width
 
     images = torch.zeros(num_frames, 3, image_size, image_size, dtype=torch.float32)
-    for n, img_path in enumerate(tqdm(img_paths, desc="frame loading (JPEG)")):
+    for n, img_path in enumerate(tqdm(img_paths, desc="frame loading (JPEG)", disable=disable_prints)):
         images[n], video_height, video_width = _load_img_as_tensor(img_path, image_size)
     if not offload_video_to_cpu:
         images = images.to(compute_device)

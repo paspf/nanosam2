@@ -3,7 +3,17 @@ This repository is inspired by https://github.com/NVIDIA-AI-IOT/nanosam and adap
 Although the inference speed of the SAM2.1 Hiera backbones is already quite fast on GPUs, it is still difficult to deploy on edge devices.
 This repository aims to provide a more efficient alternative for SAM2.1 inference, with a focus on backbones that are smaller and faster to deploy.
 
-## Prepare images
+
+## Dependencies and Prerequirements
+
+To train and run the evaluation, the following packages are required:
+
+```
+pip install matplotlib torchvision tqdm hydra-core pycocotools requests iopath
+```
+
+### Image Preparation
+
 Download the chunks from the [SA1 dataset](https://ai.meta.com/datasets/segment-anything-downloads/) that you want to train on, and put them in a folder. For example:
 ```
 data/
@@ -17,15 +27,45 @@ data/
 ```
 You can then point the training script to this folder.
 
-## Train with different backbone
+#### Use Segment Anything Download Script
+
+Instead of downloading and extracting the chunks manually, you can use the [download script](tools/download_sa_dataset.py). Download the textfile containing the list of all links and provide it to the download script. 
+
+| Parameter | Description |
+| --- | --- |
+| -d  | Destination, if no destination is set, all files are downloaded to the current directory|
+| -n  | number of chunks to download, if not set all chunks are downloaded |
+| -e | Extract tar files |
+| -r | Remove tar files after extracting |
+```
+python tools/download_sa_dataset.py links.txt -d <Destination> -n <Number of Chunks> -e
+```
+
+### Get original SAM2 checkpoints
+
+Get the a original SAM2 checkpoint as described in the SAM2 repository. This checkpoint is required for the teaching network.
+
+## Train
+
 All experiments were conducted on a RTX 4090 GPU. So you might need to adjust the batch size for your GPU.
+
+In the [train.py](nanosam2/tools/train.py.py).
+ file, adjust the data set chunks you want to use for training (seach for `SA1Folder` in `train.py`).
+
 
 ### Train with resnet18 backbone and distill from sam2.1_hiera_s
 ```bash
-python nanosam2/tools/train_from_images.py --images /path/to/images --output_dir results/sam2.1_hiera_s_resnet18 --model_name resnet18 --nanosam2_config nanosam2.1_resnet18 --sam2_config sam2.1_hiera_s --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 
+python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam2.1_hiera_s_resnet18 --model_name resnet18 --nanosam2_config nanosam2.1_resnet18 --sam2_config sam2.1_hiera_s --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 
+```
+
+### Train with MobileNetv3 Large backbone and distill from sam2.1_hiera_s
+
+```bash
+python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam2.1_hiera_s_mobilenetV3_large --nanosam2_config nanosam2.1_mobilenet_v3_large --sam2_config sam2.1_hiera_s --teacher_checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 --coco_root /path/to/coco --coco_ann /path/to/coco/annotations
 ```
 
 ## Evaluate on the validation set
+
 Download Coco 2017 validation images and annotations from [here](https://cocodataset.org/#download), and evaluate the model:
 ```bash
 python nanosam2/tools/eval_coco.py --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --sam2_config nanosam2.1_resnet18 --output results/sam2.1_hiera_s_resnet18/coco_results.json
@@ -34,11 +74,13 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s_resnet1
 
 
 ## Results FP32
+
 Each backbone was trained for 10 epochs on 14 SA1 datasets, i.e. ~175k images.
 | Backbone | num_epochs | mIoU  All | mIoU Small | mIoU Medium | mIoU Large |
 | -------- | -------- | -------- | -------- | -------- | -------- |
 | resnet18 | 10 | 0.69 | 0.62 | 0.73 | 0.76 |
 | casvit_s | 10 | 0.71 | 0.64 | 0.75 | 0.78 |
+| mobilenetV3 large | 10 | 0.68 | 0.60 | 0.71 | 0.75 |
 
 ## Results QAT
 QAT was initialized with the result of FP32 training. Casvit fails to train for now.

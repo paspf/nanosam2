@@ -1,5 +1,7 @@
 results/
 sam2_checkpoints/
+notebooks/
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
