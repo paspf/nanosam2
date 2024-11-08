@@ -1,14 +1,5 @@
 # Live Demo
 # Based on "https://github.com/Gy920/segment-anything-2-real-time/blob/main/demo/demo.py".
-#
-# Use hiera backend:
-# python demos/live_demo.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video ../../datasets/aquarium.mp4
-#
-# Use renset18 backend:
-# python demos/live_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video ../../datasets/aquarium.mp4
-#
-# Use mobilenet backend:
-# python demos/live_demo.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video ../../datasets/aquarium.mp4
 
 
 import torch
