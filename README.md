@@ -12,6 +12,33 @@ To train and run the evaluation, the following packages are required:
 pip install matplotlib torchvision tqdm hydra-core pycocotools requests iopath
 ```
 
+## Inference
+
+### Camera Live Streams
+
+Stream a video (of a camera or a video file) into Nanosam2.
+
+
+For ResNet18 backend:
+
+```
+python demos/live_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <Video device id or path to mp4 file>
+```
+
+For MobileNetV3 backend:
+
+```
+python demos/live_demo.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video <Video device id or path to mp4 file>
+```
+
+For original hiera backend:
+
+```
+python demos/live_demo.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
+```
+
+## Training Prerequirements
+
 ### Image Preparation
 
 Download the chunks from the [SA1 dataset](https://ai.meta.com/datasets/segment-anything-downloads/) that you want to train on, and put them in a folder. For example:
