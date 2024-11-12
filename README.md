@@ -14,9 +14,15 @@ pip install matplotlib torchvision tqdm hydra-core pycocotools requests iopath
 
 ## Inference
 
+### Video
+
+Load all frames of a video at once into Nanosam2 and perform tracking of objects from any frame.
+
+
+
 ### Camera Live Streams
 
-Stream a video (of a camera or a video file) into Nanosam2.
+Stream a video (of a camera or a video file) frame by frame into Nanosam2. Perform tracking of objects from any frame.
 
 
 For ResNet18 backend:
