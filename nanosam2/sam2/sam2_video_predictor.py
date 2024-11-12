@@ -124,7 +124,7 @@ class SAM2VideoPredictor(SAM2Base):
         Returns:
           (SAM2VideoPredictor): The loaded model.
         """
-        from sam2.build_sam import build_sam2_video_predictor_hf
+        from nanosam2.sam2.build_sam import build_sam2_video_predictor_hf
 
         sam_model = build_sam2_video_predictor_hf(model_id, **kwargs)
         return sam_model
