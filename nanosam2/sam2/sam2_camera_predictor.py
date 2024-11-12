@@ -102,11 +102,11 @@ class SAM2CameraPredictor(SAM2Base):
         self.condition_state["offload_state_to_cpu"] = offload_state_to_cpu
         # the original video height and width, used for resizing final output scores
 
-        self.condition_state["device"] = torch.device("cuda")
+        self.condition_state["device"] = self.device
         if offload_state_to_cpu:
             self.condition_state["storage_device"] = torch.device("cpu")
         else:
-            self.condition_state["storage_device"] = torch.device("cuda")
+            self.condition_state["storage_device"] = self.device
         # inputs on each frame
         self.condition_state["point_inputs_per_obj"] = {}
         self.condition_state["mask_inputs_per_obj"] = {}
@@ -418,7 +418,8 @@ class SAM2CameraPredictor(SAM2Base):
                 prev_out = obj_output_dict["non_cond_frame_outputs"].get(frame_idx)
 
         if prev_out is not None and prev_out["pred_masks"] is not None:
-            prev_sam_mask_logits = prev_out["pred_masks"].cuda(non_blocking=True)
+            device = self.condition_state["device"]
+            prev_sam_mask_logits = prev_out["pred_masks"].to(device, non_blocking=True)
             # Clamp the scale of prev_sam_mask_logits to avoid rare numerical issues.
             prev_sam_mask_logits = torch.clamp(prev_sam_mask_logits, -32.0, 32.0)
         current_out, _ = self._run_single_frame_inference(
@@ -525,7 +526,8 @@ class SAM2CameraPredictor(SAM2Base):
                 prev_out = obj_output_dict["non_cond_frame_outputs"].get(frame_idx)
 
         if prev_out is not None and prev_out["pred_masks"] is not None:
-            prev_sam_mask_logits = prev_out["pred_masks"].cuda(non_blocking=True)
+            device = self.condition_state["device"]
+            prev_sam_mask_logits = prev_out["pred_masks"].to(device, non_blocking=True)
             # Clamp the scale of prev_sam_mask_logits to avoid rare numerical issues.
             prev_sam_mask_logits = torch.clamp(prev_sam_mask_logits, -32.0, 32.0)
         current_out, _ = self._run_single_frame_inference(
@@ -1139,7 +1141,7 @@ class SAM2CameraPredictor(SAM2Base):
         if backbone_out is None:
             # Cache miss -- we will run inference on a single image
             image = (
-                self.condition_state["images"][frame_idx].cuda().float().unsqueeze(0)
+                self.condition_state["images"][frame_idx].to(self.condition_state["device"]).float().unsqueeze(0)
             )
             backbone_out = self.forward_image(image)
             # Cache the most recent frame's feature (for repeated interactions with
@@ -1165,7 +1167,7 @@ class SAM2CameraPredictor(SAM2Base):
         return features
 
     def _get_feature(self, img, batch_size):
-        image = img.cuda().float().unsqueeze(0)
+        image = img.to(self.condition_state["device"]).float().unsqueeze(0)
         backbone_out = self.forward_image(image)
         expanded_image = image.expand(batch_size, -1, -1, -1)
         expanded_backbone_out = {
