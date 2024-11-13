@@ -12,10 +12,9 @@ import torch
 from tqdm import tqdm
 
 from nanosam2.sam2.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
-from nanosam2.sam2.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames
+from nanosam2.sam2.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, LimitedDict
 import numpy as np
 import cv2
-
 
 class SAM2CameraPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
@@ -71,19 +70,12 @@ class SAM2CameraPredictor(SAM2Base):
             offload_video_to_cpu=False, offload_state_to_cpu=False
         )
         img, width, height = self.perpare_data(img, image_size=self.image_size)
-        self.condition_state["images"] = [img]
+        self.condition_state["images"] = LimitedDict()
+        self.condition_state["images"][0] = img
         self.condition_state["num_frames"] = len(self.condition_state["images"])
         self.condition_state["video_height"] = height
         self.condition_state["video_width"] = width
         self._get_image_feature(frame_idx=0, batch_size=1)
-
-    def add_conditioning_frame(self, img):
-        img, width, height = self.perpare_data(img, image_size=self.image_size)
-        self.condition_state["images"].append(img)
-        self.condition_state["num_frames"] = len(self.condition_state["images"])
-        self._get_image_feature(
-            frame_idx=self.condition_state["num_frames"] - 1, batch_size=1
-        )
 
     def _init_state(
         self,
@@ -148,6 +140,9 @@ class SAM2CameraPredictor(SAM2Base):
         # This is a new object id not sent to the server before. We only allow adding
         # new objects *before* the tracking starts.
         allow_new_object = not self.condition_state["tracking_has_started"]
+        #if not allow_new_object:
+        #    print("Nanosam2: Tracking already started. Forcing new object creation.")
+        #    allow_new_object = True
         if allow_new_object:
             # get the next object slot
             obj_idx = len(self.condition_state["obj_id_to_idx"])
@@ -911,6 +906,7 @@ class SAM2CameraPredictor(SAM2Base):
     ):
         self.frame_idx += 1
         self.condition_state["num_frames"] += 1
+        self.condition_state["images"][self.condition_state["num_frames"]] = self.perpare_data(img, image_size=self.image_size)[0]
         if not self.condition_state["tracking_has_started"]:
             self.propagate_in_video_preflight()
 
@@ -1140,9 +1136,14 @@ class SAM2CameraPredictor(SAM2Base):
         )
         if backbone_out is None:
             # Cache miss -- we will run inference on a single image
-            image = (
-                self.condition_state["images"][frame_idx].to(self.condition_state["device"]).float().unsqueeze(0)
-            )
+            try:
+                image = (
+                    self.condition_state["images"][frame_idx].to(self.condition_state["device"]).float().unsqueeze(0)
+                )
+            except IndexError:
+                print(f"self.condition_state[\"images\"] as len {len(self.condition_state["images"])} but frame_idx {frame_idx} is provided."
+                      f"num_frames has value {self.condition_state["num_frames"]}")
+                raise IndexError
             backbone_out = self.forward_image(image)
             # Cache the most recent frame's feature (for repeated interactions with
             # a frame; we can use an LRU cache for more frames in the future).

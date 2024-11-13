@@ -6,7 +6,6 @@
 
 import logging
 import os
-
 import torch
 from hydra import compose
 from hydra.utils import instantiate
