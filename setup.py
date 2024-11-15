@@ -83,7 +83,7 @@ def get_extensions():
     try:
         from torch.utils.cpp_extension import CUDAExtension
 
-        srcs = ["nanosam/sam2/csrc/connected_components.cu"]
+        srcs = ["nanosam2/sam2/csrc/connected_components.cu"]
         compile_args = {
             "cxx": [],
             "nvcc": [
@@ -93,7 +93,7 @@ def get_extensions():
                 "-D__CUDA_NO_HALF2_OPERATORS__",
             ],
         }
-        ext_modules = [CUDAExtension("nanosam.sam2._C", srcs, extra_compile_args=compile_args)]
+        ext_modules = [CUDAExtension("nanosam2.sam2._C", srcs, extra_compile_args=compile_args)]
     except Exception as e:
         if BUILD_ALLOW_ERRORS:
             print(CUDA_ERROR_MSG.format(e))
