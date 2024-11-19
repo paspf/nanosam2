@@ -26,7 +26,7 @@ if device == "cuda":
         torch.backends.cudnn.allow_tf32 = True
 
 predictor = build_sam2_camera_predictor(args.config, args.checkpoint, device=torch.device(device))
-
+frametimes = []
 
 def _compile_model_blocks(model, model_settings:list, compile_backend):
     print("Compiling Model...")
@@ -40,13 +40,11 @@ def _compile_model_blocks(model, model_settings:list, compile_backend):
         model.sam_prompt_encoder = torch.compile(model.sam_prompt_encoder, backend=compile_backend)
     if model_settings[4]: # memory_encoder
         model.memory_encoder = torch.compile(model.memory_encoder, backend=compile_backend)
-
+    print("Compile finished.")
     return model
 
 
-predictor = _compile_model_blocks(predictor, [True, True, False, False, True], "inductor")
-print("Compile finished.")
-
+#predictor = _compile_model_blocks(predictor, [True, False, False, False, False], "inductor")
 cap = cv2.VideoCapture(args.video)
 
 if_init = False
@@ -111,7 +109,8 @@ while True:
         end = time.perf_counter()
         prediction_time = (mid-start)
         drawing_time = (end-mid)
-        print(f"prediction_time: {prediction_time} | drawing time: {drawing_time}")
+        frametimes.append(prediction_time)
+        # print(f"prediction_time: {prediction_time} | drawing time: {drawing_time}")
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     cv2.imshow("frame", frame)
 
@@ -120,3 +119,4 @@ while True:
 
 cap.release()
 print("Video ended.")
+print(f"Average runtime per frame: {np.average(frametimes)}s | Average FPS: {1/np.average(frametimes)}")
