@@ -145,7 +145,7 @@ python nanosam2/tools/benchmark.py --config=sam2.1_hiera_t
 
 ### Todo 
 
-- [ ] Upload trained Resnet18 and Casvit_s backbones
+- [x] Upload trained Resnet18, mobilenet and Casvit_s backbones
 - [ ] Add a video segmentation demo
 - [ ] Improve instructions how to install the thing
 
