@@ -1141,8 +1141,10 @@ class SAM2CameraPredictor(SAM2Base):
                     self.condition_state["images"][frame_idx].to(self.condition_state["device"]).float().unsqueeze(0)
                 )
             except IndexError:
-                print(f"self.condition_state[\"images\"] as len {len(self.condition_state["images"])} but frame_idx {frame_idx} is provided."
-                      f"num_frames has value {self.condition_state["num_frames"]}")
+                len_condition_state_images = len(self.condition_state["images"])
+                len_conditon_state_num_frames = self.condition_state["num_frames"]
+                print(f"self.condition_state[\"images\"] as len {len_condition_state_images} but frame_idx {frame_idx} is provided."
+                      f"num_frames has value {len_conditon_state_num_frames}")
                 raise IndexError
             backbone_out = self.forward_image(image)
             # Cache the most recent frame's feature (for repeated interactions with
