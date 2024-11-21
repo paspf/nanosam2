@@ -79,6 +79,7 @@ python tools/download_sa_dataset.py links.txt -d <Destination> -n <Number of Chu
 Get the a original SAM2 checkpoint as described in the SAM2 repository. This checkpoint is required for the teaching network.
 
 ## Train
+You can find pretrained backbones (for ~10epochs) [here](https://drive.google.com/drive/folders/15wApVHwqJGunjDP_cx5YZDCTEKliOMCQ?usp=sharing).
 
 All experiments were conducted on a RTX 4090 GPU. So you might need to adjust the batch size for your GPU.
 
@@ -107,13 +108,14 @@ python nanosam2/tools/compute_eval_coco_metric.py results/sam2.1_hiera_s_resnet1
 
 
 ## Results FP32
+You can find pretrained nanosam2 checkpoints [here](https://drive.google.com/drive/folders/15wApVHwqJGunjDP_cx5YZDCTEKliOMCQ?usp=sharing).
 
 Each backbone was trained for 10 epochs on 14 SA1 datasets, i.e. ~175k images.
 | Backbone | num_epochs | mIoU  All | mIoU Small | mIoU Medium | mIoU Large |
 | -------- | -------- | -------- | -------- | -------- | -------- |
 | resnet18 | 10 | 0.69 | 0.62 | 0.73 | 0.76 |
 | casvit_s | 10 | 0.71 | 0.64 | 0.75 | 0.78 |
-| mobilenetV3 large | 10 | 0.68 | 0.60 | 0.71 | 0.75 |
+| mobilenetV3 large | 20 | 0.68 | 0.60 | 0.71 | 0.75 |
 
 ## Results QAT
 QAT was initialized with the result of FP32 training. Casvit fails to train for now.
@@ -176,6 +178,18 @@ python nanosam2/tools/benchmark.py --config=sam2.1_hiera_t
 
 ### Todo 
 
-- [ ] Upload trained Resnet18 and Casvit_s backbones
+- [x] Upload trained Resnet18, mobilenet and Casvit_s backbones
 - [ ] Add a video segmentation demo
 - [ ] Improve instructions how to install the thing
+
+### Citing
+If you find this repository useful for your work consider citing it :)
+```bibtex
+    @misc{UrbanPfeifferGithubRepo,
+      author       = {Steffen Urban and Pascal Pfeiffer},
+      title        = {nanosam2},
+      year         = {2024},
+      howpublished = {\url{https://github.com/urbste/nanosam2}},
+      note         = {Accessed: 2024-11-21}
+    }
+```
