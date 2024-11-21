@@ -151,12 +151,12 @@ python nanosam2/tools/benchmark.py --config=sam2.1_hiera_t
 
 ### Citing
 If you find this repository useful for your work consider citing it :)
-
-@misc{UrbanPfeifferGithubRepo,
-  author       = {Steffen Urban and Pascal Pfeiffer},
-  title        = {nanosam2},
-  year         = {2024},
-  howpublished = {\url{https://github.com/urbste/nanosam2}},
-  note         = {Accessed: 2024-11-21}
-}
-
+```bibtex
+    @misc{UrbanPfeifferGithubRepo,
+      author       = {Steffen Urban and Pascal Pfeiffer},
+      title        = {nanosam2},
+      year         = {2024},
+      howpublished = {\url{https://github.com/urbste/nanosam2}},
+      note         = {Accessed: 2024-11-21}
+    }
+```
