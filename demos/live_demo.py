@@ -9,12 +9,14 @@ import argparse
 from nanosam2.sam2.build_sam import build_sam2_camera_predictor
 import time
 
+# Parse Command Line Arguments.
 parser = argparse.ArgumentParser(description='Run benchmarks on different devices with different model optimizations.')
 parser.add_argument("--config", type=str, default="sam2_hiera_s", help="The path to a sam2 config.")
 parser.add_argument("--checkpoint", type=str, default="sam2_checkpoints/sam2.1_hiera_small.pt")
 parser.add_argument('--video', default=0, help='Path to a video or a camera id, default: 0')
 args = parser.parse_args()
 
+# Configure Device.
 device = "cuda"
 if device == "cuda":
     # use bfloat16 for the entire notebook
@@ -25,6 +27,7 @@ if device == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
+# Build Predictor.
 predictor = build_sam2_camera_predictor(args.config, args.checkpoint, device=torch.device(device))
 frametimes = []
 
@@ -43,12 +46,13 @@ def _compile_model_blocks(model, model_settings:list, compile_backend):
     print("Compile finished.")
     return model
 
-
+# Compile Model if Required.
 #predictor = _compile_model_blocks(predictor, [True, False, False, False, False], "inductor")
+
+# Open Video Stream.
 cap = cv2.VideoCapture(args.video)
 
 if_init = False
-
 
 while True:
     ret, frame = cap.read()
@@ -94,9 +98,8 @@ while True:
     else:
         start = time.perf_counter()
         out_obj_ids, out_mask_logits = predictor.track(frame)
-        mid = time.perf_counter()
+        end = time.perf_counter()
         all_mask = np.zeros((height, width, 1), dtype=np.uint8)
-        # print(all_mask.shape)
         for i in range(0, len(out_obj_ids)):
             out_mask = (out_mask_logits[i] > 0.0).permute(1, 2, 0).cpu().numpy().astype(
                 np.uint8
@@ -106,11 +109,8 @@ while True:
 
         all_mask = cv2.cvtColor(all_mask, cv2.COLOR_GRAY2RGB)
         frame = cv2.addWeighted(frame, 1, all_mask, 0.5, 0)
-        end = time.perf_counter()
-        prediction_time = (mid-start)
-        drawing_time = (end-mid)
+        prediction_time = (end-start)
         frametimes.append(prediction_time)
-        # print(f"prediction_time: {prediction_time} | drawing time: {drawing_time}")
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     cv2.imshow("frame", frame)
 
