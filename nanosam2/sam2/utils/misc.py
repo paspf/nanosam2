@@ -13,6 +13,35 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
+class LimitedDict:
+    """
+    Lictionary storing only n elements.
+    The element with the lowest key (must be an int) is removed if a new element is added.
+    Added for Nanosam2.
+    """
+    def __init__(self):
+        self.data = {}
+
+    def __getitem__(self, key):
+        # Allow access to elements using []
+        return self.data[key]
+
+    def __setitem__(self, key, value):
+        # Add the new element to the dictionary
+        self.data[key] = value
+        
+        # Check if the number of elements exceeds three
+        if len(self.data) > 3:
+            # Remove the element with the lowest key
+            min_key = min(self.data.keys())
+            del self.data[min_key]
+
+    def __repr__(self):
+        return str(self.data)
+    
+    def __len__(self):
+        # Return the number of elements in the dictionary
+        return len(self.data)
 
 def get_sdpa_settings():
     if torch.cuda.is_available():
@@ -58,7 +87,7 @@ def get_connected_components(mask):
     - counts: A tensor of shape (N, 1, H, W) containing the area of the connected
               components for foreground pixels and 0 for background pixels.
     """
-    from sam2 import _C
+    from nanosam2.sam2 import _C
 
     return _C.get_connected_componnets(mask.to(torch.uint8).contiguous())
 

@@ -221,8 +221,9 @@ if __name__ == "__main__":
     # devices = ["auto"]
 
     models = [
-        ModelSource("nanosam2", "results/sam2.1_hiera_s_resnet18/checkpoint.pth", "../sam2_configs/nanosam2.1_resnet18.yaml"),
-        ModelSource("sam2.1_small", "sam2_checkpoints/sam2.1_hiera_small.pt", "../sam2_configs/sam2.1_hiera_s.yaml")
+        ModelSource("nanosam2_resnet18", "results/sam2.1_hiera_s_resnet18/checkpoint.pth", "../sam2_configs/nanosam2.1_resnet18.yaml"),
+        ModelSource("sam2.1_small", "results/sam2.1_hiera_s/sam2.1_hiera_small.pt", "../sam2_configs/sam2.1_hiera_s.yaml"),
+        ModelSource("nanosam2_mobilenetV3", "results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth", "../sam2_configs/nanosam2.1_mobilenet_v3_large.yaml")
         ]
     bvp = BenchmarkVideoPerformance(args.video, devices, models, compile_settings=[[False, False, False, False, False],
                                                                                    [True, False, False, False, False],

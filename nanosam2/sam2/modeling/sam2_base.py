@@ -14,6 +14,7 @@ from nanosam2.sam2.modeling.sam.mask_decoder import MaskDecoder
 from nanosam2.sam2.modeling.sam.prompt_encoder import PromptEncoder
 from nanosam2.sam2.modeling.sam.transformer import TwoWayTransformer
 from nanosam2.sam2.modeling.sam2_utils import get_1d_sine_pe, MLP, select_closest_cond_frames
+from nanosam2.sam2.utils.exceptions import Nanosam2Error
 
 # a large negative value as a placeholder score for missing objects
 NO_OBJ_SCORE = -1024.0
@@ -524,7 +525,9 @@ class SAM2Base(torch.nn.Module):
             to_cat_memory, to_cat_memory_pos_embed = [], []
             # Add conditioning frames's output first (all cond frames have t_pos=0 for
             # when getting temporal positional embedding below)
-            assert len(output_dict["cond_frame_outputs"]) > 0
+            # assert len(output_dict["cond_frame_outputs"]) > 0
+            if len(output_dict["cond_frame_outputs"]) == 0:
+                raise Nanosam2Error("output_dict[\"cond_frame_outputs\"] == 0", Nanosam2Error.Errors.NoElementsIn_cond_frame_outputs)
             # Select a maximum number of temporally closest cond frames for cross attention
             cond_outputs = output_dict["cond_frame_outputs"]
             selected_cond_outputs, unselected_cond_outputs = select_closest_cond_frames(

@@ -6,11 +6,58 @@ This repository aims to provide a more efficient alternative for SAM2.1 inferenc
 
 ## Dependencies and Prerequirements
 
-To train and run the evaluation, the following packages are required:
+ - Create a new Python 3.10+ environment and clone the repository.
+ - Install the dependencies listed below:
 
 ```
 pip install matplotlib torchvision tqdm hydra-core pycocotools requests iopath
 ```
+
+ - Install the repository as editable package `pip install -e .`
+
+## Inference
+
+### Video
+
+Load all frames of a video at once into Nanosam2 and perform tracking of objects from any frame. To use the script you have to obtain all frames of the video as `.jpg` file. Place all `.jpg` files
+in the same directory and pass the directory to `video_frames_demo.py`. 
+
+Extracting all frames of a video uns FFmpeg:
+```
+ffmpeg -i video.mp4 05%d.jpg
+```
+
+Calling the inference script with ResNet18 backend:
+
+```
+python demos/video_frames_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <directory with exported video frames>
+```
+
+
+### Camera Live Stream
+
+Stream a video (of a camera or a video file) frame by frame into Nanosam2. Perform tracking of objects from any frame.
+
+
+For ResNet18 backend:
+
+```
+python demos/live_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <Video device id or path to mp4 file>
+```
+
+For MobileNetV3 backend:
+
+```
+python demos/live_demo.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video <Video device id or path to mp4 file>
+```
+
+For original hiera backend:
+
+```
+python demos/live_demo.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
+```
+
+## Training Prerequirements
 
 ### Image Preparation
 
@@ -146,8 +193,8 @@ python nanosam2/tools/benchmark.py --config=sam2.1_hiera_t
 ### Todo 
 
 - [x] Upload trained Resnet18, mobilenet and Casvit_s backbones
-- [ ] Add a video segmentation demo
-- [ ] Improve instructions how to install the thing
+- [x] Add a video segmentation demo
+- [x] Improve instructions how to install the thing
 
 ### Citing
 If you find this repository useful for your work consider citing it :)
