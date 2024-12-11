@@ -13,13 +13,7 @@ import torch
 import itertools
 import time
 from nanosam2.sam2.build_sam import build_sam2_video_predictor
-
-
-class ModelSource:
-    def __init__(self, name:str, checkpoint:str, cfg:str):
-        self.name = name
-        self.checkpoint = checkpoint
-        self.cfg = cfg
+from tools.misc import ModelSource
 
 class BenchmarkVideoPerformance:
     class BenchmarkIterationMetadata:
