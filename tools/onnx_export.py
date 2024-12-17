@@ -115,9 +115,11 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, use_simplify:bool
     """
     Export a building block of nanosam2 to onnx. Not all blocks can be converted.
     """
+    print(f"Exporting Model: {m.name} block: {block}...")
     out_dir.mkdir(parents=True, exist_ok=True)
     predictor = build_sam2_video_predictor(m.cfg, m.checkpoint, torch.device("cpu"))
     separate_parameters = False
+    additional_parameters = None
     match block:
         case "image-encoder":
             torch_model = predictor.image_encoder
@@ -137,13 +139,17 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, use_simplify:bool
                       [1, 256, 32, 32],
                       [1, 8, 256]]
             separate_parameters = True
+        case "memory-encoder":
+            torch_model = predictor.memory_encoder
+            inputs = [[1, 256, 32, 32],
+                      [1, 1, 512, 512]]
+            additional_parameters = [True]
+            separate_parameters = True
         case "not supported: prompt-encoder-mask-downscaling":
             # mask_downscaling is only used in SAM2 when prompting with masks instead of boxes or points.
             torch_model = predictor.sam_prompt_encoder.mask_downscaling
         case "not supported: memory-attention":
             torch_model = predictor.memory_attention
-        case "not supported: memory-encoder":
-            torch_model = predictor.memory_encoder
         case _:
             print(f"Unknown model block: {block}")
             exit()
@@ -158,9 +164,13 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, use_simplify:bool
             elif len(e) == 3:
                 torch_input.append(torch.randn(e[0], e[1], e[2]))
     
-    if not separate_parameters:
+    if False:
         # Currently only works if models forward function only has a single input parameter
         test_torch_model(torch_model, torch_input)
+
+    if additional_parameters is not None:
+        for p in additional_parameters:
+            torch_input.append(p)
 
     if separate_parameters:
         torch_input = tuple(torch_input)
@@ -176,7 +186,8 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, use_simplify:bool
         model = onnx.load(export_path)
         model, check = onnxsim.simplify(model)
         if check:
-            print("Model simplification was successful!")
+            simplify_path = modify_filename(export_path)
+            onnx.save(model, simplify_path)
         else:
             print("Model simplification failed!")
     analyze_onnx_model(onnx.load(export_path))
@@ -188,6 +199,15 @@ if __name__ == "__main__":
             ModelSource("nanosam2-mobilenetV3", "results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth", "../sam2_configs/nanosam2.1_mobilenet_v3_large.yaml")
             ]
     out_dir = Path("model_exports")
-    export_model_block(models[0], "image-encoder-neck", out_dir, use_simplify=False)
+
+    export_blocks = [
+        "image-encoder",
+        "image-encoder-trunk",
+        "image-encoder-neck",
+        "mask-decoder-transformer",
+        "memory-encoder",
+    ]
+    for b in export_blocks:
+        export_model_block(models[0], b, out_dir, use_simplify=False)
     print("done.")
 
