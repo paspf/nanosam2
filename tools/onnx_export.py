@@ -134,6 +134,11 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
                            torch.randn(1,256,32,32),
                            torch.randn(1,512,16,16)]
             use_unpack_operator = False
+        case "mask-decoder":
+            torch_model = predictor.sam_mask_decoder
+            torch_input = (torch.randn(1, 256, 32, 32),
+                           torch.randn(1, 256, 32, 32),
+                           torch.randn(1, 8, 256))
         case "mask-decoder-transformer":
             torch_model = predictor.sam_mask_decoder.transformer
             torch_input = (torch.randn(1, 256, 32, 32),
@@ -148,12 +153,13 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
             # mask_downscaling is only used in SAM2 when prompting with masks instead of boxes or points.
             torch_model = predictor.sam_prompt_encoder.mask_downscaling
         case "memory-attention":
-            print("Hint: Fails due to implementation of memory_attention.")
+            print("Hint: Fails due to implementation of memory_attention. Value p is for the number of prompts entered.")
+            p = 2
             torch_model = predictor.memory_attention
-            torch_input = ([torch.randn(1024, 2, 256)],
-                           torch.randn(7200, 2, 64),
-                           [torch.randn(1024, 2, 256)],
-                           torch.randn(7200, 2, 64),
+            torch_input = ([torch.randn(1024, p, 256)],
+                           torch.randn(7200, p, 64),
+                           [torch.randn(1024, p, 256)],
+                           torch.randn(7200, p, 64),
                            32)
         case _:
             print(f"Unknown model block: {block}")
@@ -221,6 +227,7 @@ if __name__ == "__main__":
         "image-encoder",
         "image-encoder-trunk",
         "image-encoder-neck",
+        "mask-decoder",
         "mask-decoder-transformer",
         "memory-encoder",
         "memory-attention"
