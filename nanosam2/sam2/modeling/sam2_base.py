@@ -96,6 +96,8 @@ class SAM2Base(torch.nn.Module):
         compile_image_encoder: bool = False,
     ):
         super().__init__()
+        # Feature Maps callback, default: None
+        self.feature_maps_callback = None
 
         # Part 1: the image backbone
         self.image_encoder = image_encoder
@@ -198,6 +200,11 @@ class SAM2Base(torch.nn.Module):
     @property
     def device(self):
         return next(self.parameters()).device
+    
+    def set_feature_maps_callback(self, fun):
+        self.feature_maps_callback = fun
+        self.sam_mask_decoder.set_feature_maps_callback(self.feature_maps_callback)
+
 
     def forward(self, *args, **kwargs):
         raise NotImplementedError(

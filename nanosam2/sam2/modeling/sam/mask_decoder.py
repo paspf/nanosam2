@@ -18,6 +18,7 @@ class MaskDecoder(nn.Module):
         *,
         transformer_dim: int,
         transformer: nn.Module,
+        feature_maps_callback=None,
         num_multimask_outputs: int = 3,
         activation: Type[nn.Module] = nn.GELU,
         iou_head_depth: int = 3,
@@ -50,6 +51,7 @@ class MaskDecoder(nn.Module):
         super().__init__()
         self.transformer_dim = transformer_dim
         self.transformer = transformer
+        self.feature_maps_callback=feature_maps_callback
 
         self.num_multimask_outputs = num_multimask_outputs
 
@@ -106,6 +108,9 @@ class MaskDecoder(nn.Module):
         self.dynamic_multimask_via_stability = dynamic_multimask_via_stability
         self.dynamic_multimask_stability_delta = dynamic_multimask_stability_delta
         self.dynamic_multimask_stability_thresh = dynamic_multimask_stability_thresh
+
+    def set_feature_maps_callback(self, fun):
+        self.feature_maps_callback = fun
 
     def forward(
         self,
@@ -210,6 +215,8 @@ class MaskDecoder(nn.Module):
         b, c, h, w = src.shape
 
         # Run the transformer
+        if self.feature_maps_callback is not None:
+            self.feature_maps_callback("mask-decoder-transformer:inputs", {"src":src, "pos_src":pos_src, "tokens":tokens})
         hs, src = self.transformer(src, pos_src, tokens)
         iou_token_out = hs[:, s, :]
         mask_tokens_out = hs[:, s + 1 : (s + 1 + self.num_mask_tokens), :]
