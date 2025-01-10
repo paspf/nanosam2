@@ -1,6 +1,6 @@
 import onnx
 from pathlib import Path
-from tools.misc import ModelSource
+from nanosam2.datasets.containers import ModelSource
 import torch
 from nanosam2.sam2.build_sam import build_sam2_video_predictor
 from pathlib import Path
@@ -208,13 +208,14 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, u
 
 if __name__ == "__main__":
     import argparse
-    print("""
-          Welcome to Nanosam2 ONNX exporter!
-          Nanosam2 ONNX exporter is used to export parts of the Nanosam2 model to ONNX files.
-          These ONNX files can be executed using onnxruntime or further processed and deployed on the desired hardware.
-
-           - All shapes used in this ONNX exporter are determined with an input shape of 1,3,512,512
-          """)
+    print("---\n"
+          "Welcome to Nanosam2 ONNX exporter!\n"
+          "Nanosam2 ONNX exporter is used to export parts of the Nanosam2 model to ONNX files.\n"
+          "These ONNX files can be executed using onnxruntime or further processed and deployed on the desired hardware.\n"
+          "\n"
+          " - Use parameter img_shape to set the input shape. Default is [3,512,512].\n"
+          "---"
+          )
     models = [
             ModelSource("sam2.1_small", "results/sam2.1_hiera_s/sam2.1_hiera_small.pt", "../sam2_configs/sam2.1_hiera_s.yaml"),
             ModelSource("nanosam2-resnet18", "results/sam2.1_hiera_s_resnet18/checkpoint.pth", "../sam2_configs/nanosam2.1_resnet18.yaml"),
