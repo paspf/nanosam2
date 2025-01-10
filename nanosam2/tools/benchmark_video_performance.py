@@ -13,7 +13,7 @@ import torch
 import itertools
 import time
 from nanosam2.sam2.build_sam import build_sam2_video_predictor
-from tools.misc import ModelSource
+from nanosam2.datasets.containers import ModelSource
 
 class BenchmarkVideoPerformance:
     class BenchmarkIterationMetadata:
