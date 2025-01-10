@@ -1,4 +1,4 @@
-# Miscenallious tools for Nanosam 2.
+# Containers for different use cases for Nanosam2.
 #
 
 
