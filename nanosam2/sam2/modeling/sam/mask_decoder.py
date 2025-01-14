@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 from nanosam2.sam2.modeling.sam2_utils import LayerNorm2d, MLP
-
+from nanosam2.sam2.utils.misc import pad_tensor, copy_to_smaller_tensor
 
 class MaskDecoder(nn.Module):
     def __init__(
@@ -49,6 +49,7 @@ class MaskDecoder(nn.Module):
             used to predict mask quality
         """
         super().__init__()
+        self.fixed_transformer_shapes=True
         self.transformer_dim = transformer_dim
         self.transformer = transformer
         self.feature_maps_callback=feature_maps_callback
@@ -214,10 +215,27 @@ class MaskDecoder(nn.Module):
         pos_src = torch.repeat_interleave(image_pe, tokens.shape[0], dim=0)
         b, c, h, w = src.shape
 
-        # Run the transformer
+        if self.fixed_transformer_shapes:
+            tokens_limit = 16
+            objects_limit = 10
+            objects_incoming = src.shape[0]
+            tokens_incoming = tokens.shape[1]
+            src = pad_tensor(src, (objects_limit,256,32,32))
+            pos_src = pad_tensor(pos_src, (objects_limit,256,32,32))
+            tokens = pad_tensor(tokens, (objects_limit,tokens_limit,256))
+
+        # Feature map callback.
         if self.feature_maps_callback is not None:
             self.feature_maps_callback("mask-decoder-transformer:inputs", {"src":src, "pos_src":pos_src, "tokens":tokens})
+        
+        # Run the transformer
         hs, src = self.transformer(src, pos_src, tokens)
+
+        # Restore original shapes.
+        if self.fixed_transformer_shapes:
+            src = copy_to_smaller_tensor(src, (objects_incoming, 1024, 256))
+            hs = copy_to_smaller_tensor(hs, (objects_incoming, tokens_incoming, 256))
+
         iou_token_out = hs[:, s, :]
         mask_tokens_out = hs[:, s + 1 : (s + 1 + self.num_mask_tokens), :]
 
