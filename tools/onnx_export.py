@@ -1,3 +1,9 @@
+# Export model blocks to ONNX.
+# Autohor: paspf
+#
+# Usage:
+# Call this script from cli to explort the desired model block.
+
 import onnx
 from pathlib import Path
 from nanosam2.datasets.containers import ModelSource
@@ -115,6 +121,8 @@ def test_torch_model(torch_model:torch.nn, input, silent=False, use_unpack_opera
 
 
 def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,512]):
+    input_names = ["input"]
+    d_axes = None
     use_unpack_operator = True
     match block:
         case "nanosam2":
@@ -141,9 +149,18 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
                            torch.randn(1, 8, 256))
         case "mask-decoder-transformer":
             torch_model = predictor.sam_mask_decoder.transformer
-            torch_input = (torch.randn(1, 256, 32, 32),
-                           torch.randn(1, 256, 32, 32),
-                           torch.randn(1, 8, 256))
+            #tokens_limit = 16
+            #objects_limit = 10
+            tokens_limit = 8
+            objects_limit = 1
+            torch_input = (torch.randn(objects_limit, 256, 32, 32),
+                           torch.randn(objects_limit, 256, 32, 32),
+                           torch.randn(objects_limit, tokens_limit, 256))
+            input_names = ["src", "pos_src", "tokens"]
+            # d_axes = {
+            #     "src": {0:"tokens_dyn_input_num_objects"},
+            #     "pos_src": {0:"tokens_dyn_input_num_objects"},
+            #     'tokens': {0: "tokens_dyn_input_num_objects", 1: "tokens_dyn_input_num_points"}}
         case "memory-encoder":
             torch_model = predictor.memory_encoder
             torch_input = (torch.randn(1, 256, 32, 32),
@@ -164,7 +181,7 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
         case _:
             print(f"Unknown model block: {block}")
             exit()
-    return (torch_model, torch_input, use_unpack_operator)
+    return (torch_model, torch_input, use_unpack_operator, input_names, d_axes)
 
 def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, use_simplify:bool=False):
     """
@@ -173,7 +190,7 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, u
     print(f"Exporting Model: {m.name} block: {block}...")
     out_dir.mkdir(parents=True, exist_ok=True)
     predictor = build_sam2_video_predictor(m.cfg, m.checkpoint, torch.device("cpu"))
-    torch_model, torch_input, use_unpack_operator = get_block_and_inputs(predictor=predictor, block=block, img_shape=img_shape)
+    torch_model, torch_input, use_unpack_operator, input_names, d_axes = get_block_and_inputs(predictor=predictor, block=block, img_shape=img_shape)
       
     print(" - Testing torch model...", end="")
     test_torch_model(torch_model, torch_input, silent=True, use_unpack_operator=use_unpack_operator)
@@ -184,7 +201,8 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, u
     torch.onnx.export(torch_model, torch_input, export_path, 
                       export_params=True,
                       opset_version=17, 
-                      input_names=['input']
+                      input_names=input_names,
+                      dynamic_axes=d_axes
                       )
     print("OK")
     print(f" - Model stored in {export_path}")
