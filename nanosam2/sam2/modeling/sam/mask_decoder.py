@@ -217,7 +217,7 @@ class MaskDecoder(nn.Module):
 
         if self.fixed_transformer_shapes:
             tokens_limit = 16
-            objects_limit = 10
+            objects_limit = 1
             objects_incoming = src.shape[0]
             tokens_incoming = tokens.shape[1]
             src = pad_tensor(src, (objects_limit,256,32,32))
@@ -233,6 +233,8 @@ class MaskDecoder(nn.Module):
 
         # Restore original shapes.
         if self.fixed_transformer_shapes:
+            print(f"output src size: {src.shape}")
+            print(f"output hs size: {hs.shape}")
             src = copy_to_smaller_tensor(src, (objects_incoming, 1024, 256))
             hs = copy_to_smaller_tensor(hs, (objects_incoming, tokens_incoming, 256))
 
