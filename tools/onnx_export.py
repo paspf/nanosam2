@@ -157,10 +157,10 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
                            torch.randn(objects_limit, 256, 32, 32),
                            torch.randn(objects_limit, tokens_limit, 256))
             input_names = ["src", "pos_src", "tokens"]
-            # d_axes = {
-            #     "src": {0:"tokens_dyn_input_num_objects"},
-            #     "pos_src": {0:"tokens_dyn_input_num_objects"},
-            #     'tokens': {0: "tokens_dyn_input_num_objects", 1: "tokens_dyn_input_num_points"}}
+            d_axes = {
+                #"src": {0:"tokens_dyn_input_num_objects"},
+                #"pos_src": {0:"tokens_dyn_input_num_objects"},
+                'tokens': {1: "tokens_dyn_input_num_points"}}
         case "memory-encoder":
             torch_model = predictor.memory_encoder
             torch_input = (torch.randn(1, 256, 32, 32),
