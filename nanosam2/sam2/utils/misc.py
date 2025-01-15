@@ -43,7 +43,7 @@ class LimitedDict:
         # Return the number of elements in the dictionary
         return len(self.data)
     
-def pad_tensor(original_tensor:torch.Tensor, larger_shape:torch.Tensor):
+def pad_tensor(original_tensor:torch.Tensor, larger_shape:torch.Tensor, pad="front"):
     """
     Pads the original tensor into a larger tensor filled with zeros.
     
@@ -58,11 +58,29 @@ def pad_tensor(original_tensor:torch.Tensor, larger_shape:torch.Tensor):
     larger_tensor = torch.zeros(larger_shape, dtype=original_tensor.dtype, device=original_tensor.device)
     
     # Copy the original tensor into the larger tensor
-    larger_tensor[:original_tensor.size(0), :original_tensor.size(1)] = original_tensor
-    
+    if pad=="front":
+        match original_tensor.dim():
+            case 4:
+                larger_tensor[-original_tensor.shape[0]:, -original_tensor.shape[1]:, -original_tensor.shape[2]:, -original_tensor.shape[3]:] = original_tensor
+            case 3:
+                larger_tensor[-original_tensor.shape[0]:, -original_tensor.shape[1]:, -original_tensor.shape[2]:] = original_tensor
+            case 2:
+                larger_tensor[-original_tensor.shape[0]:, -original_tensor.shape[1]:] = original_tensor
+    else:
+        #pad=="back"
+        print(original_tensor.shape)
+        print(larger_tensor.shape)
+        match original_tensor.dim():
+            case 4:
+                larger_tensor[:original_tensor.shape[0], :original_tensor.shape[1], :original_tensor.shape[2], :original_tensor.shape[3]] = original_tensor
+            case 3:
+                larger_tensor[:original_tensor.shape[0], :original_tensor.shape[1], :original_tensor.shape[2]] = original_tensor
+            case 2:
+                larger_tensor[:original_tensor.shape[0], :original_tensor.shape[1]] = original_tensor
+        
     return larger_tensor
 
-def copy_to_smaller_tensor(original_tensor, smaller_shape):
+def copy_to_smaller_tensor(original_tensor, smaller_shape, pad="front"):
     """
     Copies elements from the original tensor to a smaller tensor, ignoring excess elements.
     
@@ -73,14 +91,30 @@ def copy_to_smaller_tensor(original_tensor, smaller_shape):
     Returns:
     torch.Tensor: A smaller tensor with copied values from the original tensor.
     """
-    # Create a smaller tensor filled with zeros with the specified shape
-    smaller_tensor = torch.zeros(smaller_shape, dtype=original_tensor.dtype, device=original_tensor.device)
-    
-    # Copy the elements from the original tensor to the smaller tensor
-    smaller_tensor[:min(original_tensor.size(0), smaller_shape[0]), 
-                   :min(original_tensor.size(1), smaller_shape[1])] = original_tensor[:smaller_shape[0], :smaller_shape[1]]
-    
-    return smaller_tensor
+
+    if pad=="front":
+        match original_tensor.dim():
+            case 4:
+                extracted_tensor = original_tensor[-smaller_shape[0]:, -smaller_shape[1]:, -smaller_shape[2]:, -smaller_shape[3]:]
+            case 3:
+                extracted_tensor = original_tensor[-smaller_shape[0]:, -smaller_shape[1]:, -smaller_shape[2]:]
+            case 2:
+                extracted_tensor = original_tensor[-smaller_shape[0]:, -smaller_shape[1]:]
+            case _:
+                extracted_tensor = original_tensor[-smaller_shape[0]:, -smaller_shape[1]:]
+    else:
+        match original_tensor.dim():
+            case 4:
+                extracted_tensor = original_tensor[:smaller_shape[0], :smaller_shape[1], :smaller_shape[2], :smaller_shape[3]]
+            case 3:
+                extracted_tensor = original_tensor[:smaller_shape[0], :smaller_shape[1]:, :smaller_shape[2]]
+            case 2:
+                extracted_tensor = original_tensor[:smaller_shape[0], :smaller_shape[1]]
+            case _:
+                extracted_tensor = original_tensor[:smaller_shape[0], :smaller_shape[1]]
+       
+    return extracted_tensor
+
 
 def get_sdpa_settings():
     if torch.cuda.is_available():
