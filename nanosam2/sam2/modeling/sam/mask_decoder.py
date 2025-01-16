@@ -220,21 +220,19 @@ class MaskDecoder(nn.Module):
             objects_limit = 1
             objects_incoming = src.shape[0]
             tokens_incoming = tokens.shape[1]
-            src = pad_tensor(src, (objects_limit,256,32,32))
-            pos_src = pad_tensor(pos_src, (objects_limit,256,32,32))
+            src = pad_tensor(src, (objects_limit,src.shape[1],src.shape[2],src.shape[3]))
+            pos_src = pad_tensor(pos_src, (objects_limit,pos_src.shape[1],pos_src.shape[2],pos_src.shape[3]))
             tokens = pad_tensor(tokens, (objects_limit,tokens_limit,256))
 
         # Feature map callback.
         if self.feature_maps_callback is not None:
-            self.feature_maps_callback("mask-decoder-transformer:inputs", {"src":src, "pos_src":pos_src, "tokens":tokens})
+            self.feature_maps_callback("mask-decoder-transformer:inputs", {"src":src.cpu(), "pos_src":pos_src.cpu(), "tokens":tokens.cpu()})
         
         # Run the transformer
         hs, src = self.transformer(src, pos_src, tokens)
 
         # Restore original shapes.
         if self.fixed_transformer_shapes:
-            print(f"output src size: {src.shape}")
-            print(f"output hs size: {hs.shape}")
             src = copy_to_smaller_tensor(src, (objects_incoming, 1024, 256))
             hs = copy_to_smaller_tensor(hs, (objects_incoming, tokens_incoming, 256))
 
