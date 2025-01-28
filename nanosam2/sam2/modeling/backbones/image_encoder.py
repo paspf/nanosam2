@@ -22,13 +22,21 @@ class ImageEncoder(nn.Module):
         self.trunk = trunk
         self.neck = neck
         self.scalp = scalp
+        self.feature_maps_callback=None
         # assert (
         #     self.trunk.channel_list == self.neck.backbone_channel_list
         # ), f"Channel dims of trunk and neck do not match. Trunk: {self.trunk.channel_list}, neck: {self.neck.backbone_channel_list}"
 
     def forward(self, sample: torch.Tensor):
-        # Forward through backbone
-        features, pos = self.neck(self.trunk(sample))
+        # Forward through backbone (trunk)
+        trunk = self.trunk(sample)
+
+        # Feature map callback.
+        if self.feature_maps_callback is not None:
+            self.feature_maps_callback("image-encoder:trunk", {"0":trunk[0].cpu(), "1":trunk[1].cpu(), "2":trunk[2].cpu(), "3":trunk[3].cpu()})
+        
+        # Forward through backbone (neck)
+        features, pos = self.neck(trunk)
         if self.scalp > 0:
             # Discard the lowest resolution features
             features, pos = features[: -self.scalp], pos[: -self.scalp]
@@ -41,6 +49,9 @@ class ImageEncoder(nn.Module):
             "backbone_fpn": features,
         }
         return output
+    
+    def set_feature_maps_callback(self, fun):
+        self.feature_maps_callback = fun
 
 
 class FpnNeck(nn.Module):

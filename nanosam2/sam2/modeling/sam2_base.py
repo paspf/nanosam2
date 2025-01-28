@@ -202,8 +202,10 @@ class SAM2Base(torch.nn.Module):
         return next(self.parameters()).device
     
     def set_feature_maps_callback(self, fun):
+        """Set the feature maps callback for all blocks supporting feature maps callback"""
         self.feature_maps_callback = fun
         self.sam_mask_decoder.set_feature_maps_callback(self.feature_maps_callback)
+        self.image_encoder.set_feature_maps_callback(self.feature_maps_callback)
 
 
     def forward(self, *args, **kwargs):
