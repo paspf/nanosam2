@@ -49,7 +49,7 @@ class MaskDecoder(nn.Module):
             used to predict mask quality
         """
         super().__init__()
-        self.fixed_transformer_shapes=True
+        self.fixed_transformer_shapes=False
         self.transformer_dim = transformer_dim
         self.transformer = transformer
         self.feature_maps_callback=feature_maps_callback
@@ -170,6 +170,9 @@ class MaskDecoder(nn.Module):
 
         # Prepare output
         return masks, iou_pred, sam_tokens_out, object_score_logits
+    
+    def set_fixed_transformer_shapes(self, fixed:bool):
+        self.fixed_transformer_shapes = fixed
 
     def predict_masks(
         self,
