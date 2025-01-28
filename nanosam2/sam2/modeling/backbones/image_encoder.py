@@ -28,12 +28,16 @@ class ImageEncoder(nn.Module):
         # ), f"Channel dims of trunk and neck do not match. Trunk: {self.trunk.channel_list}, neck: {self.neck.backbone_channel_list}"
 
     def forward(self, sample: torch.Tensor):
+        # Feature map callback.
+        if self.feature_maps_callback is not None:
+            self.feature_maps_callback("image-encoder:trunk-input", {"0":sample.cpu()})
+        
         # Forward through backbone (trunk)
         trunk = self.trunk(sample)
 
         # Feature map callback.
         if self.feature_maps_callback is not None:
-            self.feature_maps_callback("image-encoder:trunk", {"0":trunk[0].cpu(), "1":trunk[1].cpu(), "2":trunk[2].cpu(), "3":trunk[3].cpu()})
+            self.feature_maps_callback("image-encoder:trunk-output", {"0":trunk[0].cpu(), "1":trunk[1].cpu(), "2":trunk[2].cpu(), "3":trunk[3].cpu()})
         
         # Forward through backbone (neck)
         features, pos = self.neck(trunk)
