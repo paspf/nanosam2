@@ -183,7 +183,7 @@ def get_block_and_inputs(predictor:torch.nn, block:str, img_shape:list=[3,512,51
             exit()
     return (torch_model, torch_input, use_unpack_operator, input_names, d_axes)
 
-def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, use_simplify:bool=False):
+def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, use_simplify:bool=False, opset_version:int=13):
     """
     Export a building block of nanosam2 to onnx. Not all blocks can be converted.
     """
@@ -197,10 +197,11 @@ def export_model_block(m:ModelSource, block:str, out_dir:Path, img_shape:list, u
     print("OK")
 
     print(" - Exporting to ONNX...", end="")
-    export_path = out_dir / Path(f"{m.name}-{block}-sa1-v01.onnx")
+    export_path = out_dir / Path(f"{m.name}-{block}-sa1-v01-op{opset_version}.onnx")
     torch.onnx.export(torch_model, torch_input, export_path, 
                       export_params=True,
-                      opset_version=17, 
+                      opset_version=opset_version,
+                      simplify=True, 
                       input_names=input_names,
                       dynamic_axes=d_axes
                       )
@@ -264,6 +265,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_path", type=str, default="model_exports2", help="Export directory.")
     parser.add_argument("--img_shape", nargs='+', type=int, default=[3,512,512], help="Image shape to use.")
     parser.add_argument("--encoder_type", type=str, default="resnet18", choices=valid_encoders)
+    parser.add_argument("--opset", type=int, default=13)
 
     out_dir = Path("model_exports2")
 
@@ -288,10 +290,10 @@ if __name__ == "__main__":
     
     if args.export != "all":
         # Export a single block or the whole nanosam2 model.
-        export_model_block(model, args.export, out_dir, args.img_shape, use_simplify=False)
+        export_model_block(model, args.export, out_dir, args.img_shape, use_simplify=False, opset=args.opset)
     else:
         # Export all blocks as individuals.
         for b in valid_exports:
             if b == "all": continue
-            export_model_block(model, b, out_dir, args.img_shape, use_simplify=False)
+            export_model_block(model, b, out_dir, args.img_shape, use_simplify=False, opset=args.opset)
     print("done.")
