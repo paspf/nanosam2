@@ -290,10 +290,10 @@ if __name__ == "__main__":
     
     if args.export != "all":
         # Export a single block or the whole nanosam2 model.
-        export_model_block(model, args.export, out_dir, args.img_shape, use_simplify=False, opset=args.opset)
+        export_model_block(model, args.export, out_dir, args.img_shape, use_simplify=False, opset_version=args.opset)
     else:
         # Export all blocks as individuals.
         for b in valid_exports:
             if b == "all": continue
-            export_model_block(model, b, out_dir, args.img_shape, use_simplify=False, opset=args.opset)
+            export_model_block(model, b, out_dir, args.img_shape, use_simplify=False, opset_version=args.opset)
     print("done.")
