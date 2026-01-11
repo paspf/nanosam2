@@ -12,7 +12,7 @@ import torch
 from tqdm import tqdm
 
 from nanosam2.sam2.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
-from nanosam2.sam2.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, LimitedDict
+from nanosam2.sam2.utils.misc import concat_points, fill_holes_in_mask_scores, LeastRecentlyUsedCache
 import numpy as np
 import cv2
 
@@ -70,9 +70,8 @@ class SAM2CameraPredictor(SAM2Base):
             offload_video_to_cpu=False, offload_state_to_cpu=False
         )
         img, width, height = self.perpare_data(img, image_size=self.image_size)
-        self.condition_state["images"] = LimitedDict()
-        self.condition_state["images"][0] = img
-        self.condition_state["num_frames"] = len(self.condition_state["images"])
+        self.condition_state["current_image"] = img
+        self.condition_state["num_frames"] = 1
         self.condition_state["video_height"] = height
         self.condition_state["video_width"] = width
         self._get_image_feature(frame_idx=0, batch_size=1)
@@ -103,7 +102,7 @@ class SAM2CameraPredictor(SAM2Base):
         self.condition_state["point_inputs_per_obj"] = {}
         self.condition_state["mask_inputs_per_obj"] = {}
         # visual features on a small number of recently visited frames for quick interactions
-        self.condition_state["cached_features"] = {}
+        self.condition_state["cached_features"] = LeastRecentlyUsedCache(capacity=8)
         # values that don't change across frames (so we only need to hold one copy of them)
         self.condition_state["constants"] = {}
         # mapping between client-side object id and model-side object index
@@ -903,14 +902,21 @@ class SAM2CameraPredictor(SAM2Base):
     def track(
         self,
         img,
+        frame_idx=None,
     ):
-        self.frame_idx += 1
-        self.condition_state["num_frames"] += 1
-        self.condition_state["images"][self.condition_state["num_frames"]] = self.perpare_data(img, image_size=self.image_size)[0]
+        if frame_idx is None:
+            self.frame_idx += 1
+            self.condition_state["num_frames"] += 1
+        else:
+            self.frame_idx = frame_idx
+            if frame_idx >= self.condition_state["num_frames"]:
+                self.condition_state["num_frames"] = frame_idx + 1
+
         if not self.condition_state["tracking_has_started"]:
             self.propagate_in_video_preflight()
 
         img, _, _ = self.perpare_data(img, image_size=self.image_size)
+        self.condition_state["current_image"] = img
 
         output_dict = self.condition_state["output_dict"]
         obj_ids = self.condition_state["obj_ids"]
@@ -1131,25 +1137,15 @@ class SAM2CameraPredictor(SAM2Base):
     def _get_image_feature(self, frame_idx, batch_size):
         """Compute the image features on a given frame."""
         # Look up in the cache first
-        image, backbone_out = self.condition_state["cached_features"].get(
-            frame_idx, (None, None)
-        )
+        image, backbone_out = self.condition_state["cached_features"][frame_idx]
         if backbone_out is None:
             # Cache miss -- we will run inference on a single image
-            try:
-                image = (
-                    self.condition_state["images"][frame_idx].to(self.condition_state["device"]).float().unsqueeze(0)
-                )
-            except IndexError:
-                len_condition_state_images = len(self.condition_state["images"])
-                len_conditon_state_num_frames = self.condition_state["num_frames"]
-                print(f"self.condition_state[\"images\"] as len {len_condition_state_images} but frame_idx {frame_idx} is provided."
-                      f"num_frames has value {len_conditon_state_num_frames}")
-                raise IndexError
+            image = (
+                self.condition_state["current_image"].to(self.condition_state["device"]).float().unsqueeze(0)
+            )
             backbone_out = self.forward_image(image)
-            # Cache the most recent frame's feature (for repeated interactions with
-            # a frame; we can use an LRU cache for more frames in the future).
-            self.condition_state["cached_features"] = {frame_idx: (image, backbone_out)}
+            # Cache the most recent frame's feature (for repeated interactions with a frame.
+            self.condition_state["cached_features"][frame_idx] = (image, backbone_out)
 
         # expand the features to have the same dimension as the number of objects
         expanded_image = image.expand(batch_size, -1, -1, -1)

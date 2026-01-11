@@ -12,36 +12,42 @@ import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
+from collections import OrderedDict
 
-class LimitedDict:
+class LeastRecentlyUsedCache:
     """
-    Lictionary storing only n elements.
-    The element with the lowest key (must be an int) is removed if a new element is added.
-    Added for Nanosam2.
+    A simple LRU (Least Recently Used) cache implementation using OrderedDict.
+    It stores a fixed number of key-value pairs and evicts the least recently used item.
     """
-    def __init__(self):
-        self.data = {}
+    def __init__(self, capacity: int):
+        self.cache = OrderedDict()
+        self.capacity = capacity
+    
+    def get(self, key: int):
+        if key not in self.cache:
+            return None
+        else:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+    
+    def __getitem__(self, key: int):
+        return self.get(key)
 
-    def __getitem__(self, key):
-        # Allow access to elements using []
-        return self.data[key]
+    def put(self, key: int, value) -> None:
+        self.cache[key] = value
+        self.cache.move_to_end(key)
+        if len(self.cache) > self.capacity:
+            self.cache.popitem(last = False)
 
-    def __setitem__(self, key, value):
-        # Add the new element to the dictionary
-        self.data[key] = value
-        
-        # Check if the number of elements exceeds three
-        if len(self.data) > 3:
-            # Remove the element with the lowest key
-            min_key = min(self.data.keys())
-            del self.data[min_key]
-
+    def __setitem__(self, key: int, value):
+        self.put(key, value)
+    
     def __repr__(self):
-        return str(self.data)
+        return str(self.cache)
     
     def __len__(self):
-        # Return the number of elements in the dictionary
-        return len(self.data)
+        # Return the number of elements in the cache.
+        return len(self.cache)
     
 def pad_tensor(original_tensor:torch.Tensor, larger_shape:torch.Tensor, pad="front"):
     """
