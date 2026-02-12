@@ -1,4 +1,5 @@
 results/
+weights/
 sam2_checkpoints/
 notebooks/
 
