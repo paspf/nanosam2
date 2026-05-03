@@ -1,7 +1,17 @@
 # nanosam2
-This repository is inspired by https://github.com/NVIDIA-AI-IOT/nanosam and adapted for SAM2.1.
-Although the inference speed of the SAM2.1 Hiera backbones is already quite fast on GPUs, it is still difficult to deploy on edge devices.
-This repository aims to provide a more efficient alternative for SAM2.1 inference, with a focus on backbones that are smaller and faster to deploy.
+
+NanoSAM2 is a lightweight, deployment-friendly implementation of [SAM2.1](https://github.com/facebookresearch/sam2),
+inspired by [NanoSAM](https://github.com/NVIDIA-AI-IOT/nanosam).
+
+While the original SAM2.1 Hiera backbones run well on high-end GPUs, they remain difficult to deploy on
+edge devices or in environments where PyTorch is unavailable.
+NanoSAM2 addresses this with two complementary strategies:
+
+- **Lightweight backbones** — drop-in replacements for the Hiera trunk (ResNet18, MobileNetV3-Large,
+  CasViT-S) that are significantly smaller and faster, trained via knowledge distillation from SAM2.1.
+- **Pure ONNX runtime** — all model components (image encoder, SAM heads, memory encoder, memory
+  attention) can be exported to ONNX and run entirely with `onnxruntime` and `numpy`.
+  No PyTorch installation is required at inference time.
 
 ## Installation
 
@@ -24,7 +34,7 @@ You can find and download pretrained nanosam2 checkpoints [here](https://drive.g
 
 All inference demos are executed on the [Bedroom](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/notebooks/videos/bedroom.mp4) video file, shared in the original [sam2](https://github.com/facebookresearch/sam2) repository. 
 
-### Video
+### Video Predictor
 
 Load all frames of a video at once into Nanosam2 and perform tracking of objects from any frame. To run the video demo you have to obtain all frames of the video as `.jpg` file. Place all `.jpg` files
 in the same directory and pass the directory to `video_frames_demo.py`. 
@@ -37,32 +47,142 @@ ffmpeg -i video.mp4 05%d.jpg
 Calling the inference script with ResNet18 backend:
 
 ```
-python demos/video_frames_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <directory with exported video frames>
+python demos/torch_video_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <directory with exported video frames>
 ```
 
 
-### Camera Live Stream
+### Camera Predictor
 
 Stream a video (from a camera or video file source) frame by frame into Nanosam2. Start object tracking from any frame in the stream.
 
 
-For ResNet18 backend:
+For ResNet18 backend with two box prompts:
 
+```bash
+python demos/torch_camera_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
 ```
-python demos/live_demo.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <Video device id or path to mp4 file>
+
+For ResNet18 backend, use mouse to set box prompt:
+
+```bash
+python demos/torch_camera_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <Video device id or path to mp4 file>
 ```
 
 For MobileNetV3 backend:
 
-```
-python demos/live_demo.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video <Video device id or path to mp4 file>
+```bash
+python demos/torch_camera_predictor.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video <Video device id or path to mp4 file>
 ```
 
 For original hiera backend:
 
+```bash
+python demos/torch_camera_predictor.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
 ```
-python demos/live_demo.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
+
+
+
+## ONNX Export and Pure-ONNX Inference
+
+NanoSAM2 can be fully exported to ONNX so that **no PyTorch is required at inference time** — only `numpy` and `onnxruntime`.
+The model is split into four independent ONNX files: image encoder, SAM heads, memory encoder, and memory attention.
+
+### Additional dependencies
+
+```bash
+pip install onnx onnxruntime onnxsim
 ```
+
+### Export model blocks
+
+Run the exporter from the `nanosam2/` directory:
+
+```bash
+# ResNet18 backbone at 512×512 (trained resolution)
+python tools/onnx_export.py --encoder_type resnet18 --export all --output_path model_exports --opset 18 --img_shape 3 512 512
+
+# Original SAM2.1 Hiera-Small backbone at 1024×1024 (trained resolution)
+python tools/onnx_export.py \
+    --encoder_type hiera_small \
+    --export all \
+    --output_path model_exports \
+    --opset 18 \
+    --img_shape 3 1024 1024
+```
+
+Individual blocks can be exported by replacing `all` with one of:
+`image-encoder`, `image-encoder-trunk`, `sam-heads`, `memory-encoder`, `memory-attention`.
+
+This produces files named `<model>-<block>-sa1-v01-op18.onnx` in `model_exports/`.
+
+### Inference Demos (ONNX Runtime)
+
+The `demos/onnx_camera_predictor.py` demo streams from a camera, a video file, or a directory of images
+and tracks objects selected with a bounding-box prompt.
+
+**Interactive mode** — draw a box with the mouse on the first frame:
+
+```bash
+# Camera
+python demos/onnx_camera_predictor.py --model_dir model_exports --video 0
+
+# Video file
+python demos/onnx_camera_predictor.py --model_dir model_exports --video path/to/video.mp4
+
+# Directory of images (sorted alphabetically, loops)
+python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom
+```
+
+**Pre-set box mode** — tracking starts immediately, no mouse input needed.
+Pass one or more `--box x1,y1,x2,y2` arguments (pixel coordinates on the original frame):
+
+```bash
+# Single object
+python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom --box 230,134,294,219
+
+# Two objects
+python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
+```
+
+**Using the Hiera-Small backbone** at 1024×1024:
+
+```bash
+python demos/onnx_live_demo.py \
+    --model_dir model_exports \
+    --encoder_prefix sam2.1_small \
+    --image_size 1024 \
+    --video 0
+```
+
+**Key controls during the demo:**
+
+| Key | Action |
+|-----|--------|
+| Left mouse button (drag) | Draw a bounding box to add / re-initialise an object |
+| `R` | Reset tracking, re-initialise on the next frame |
+| `Q` / `ESC` | Quit |
+
+### Todo 
+
+- [x] Upload trained Resnet18, mobilenet and Casvit_s backbones
+- [x] Add a video segmentation demo
+- [x] Improve instructions how to install the thing
+- [x] ONNX export for all model blocks
+- [x] Pure-ONNX camera predictor (no PyTorch at inference)
+- [x] ONNX live demo with interactive and pre-set box prompts
+
+### Citing
+If you find this repository useful for your work consider citing it :)
+```bibtex
+    @misc{UrbanPfeifferGithubRepo,
+      author       = {Steffen Urban and Pascal Pfeiffer},
+      title        = {nanosam2},
+      year         = {2024},
+      howpublished = {\url{https://github.com/urbste/nanosam2}},
+      note         = {Accessed: 2024-11-21}
+    }
+```
+
 
 ## Training Prerequirements
 
@@ -197,20 +317,5 @@ python nanosam2/tools/benchmark.py --config=sam2.1_hiera_t
 | CUDA | float16 | 1 | 62.0 (93.3) | 
 | CUDA | bfloat16 | 1 | 60.1 (92.4) | 
 
-### Todo 
+---
 
-- [x] Upload trained Resnet18, mobilenet and Casvit_s backbones
-- [x] Add a video segmentation demo
-- [x] Improve instructions how to install the thing
-
-### Citing
-If you find this repository useful for your work consider citing it :)
-```bibtex
-    @misc{UrbanPfeifferGithubRepo,
-      author       = {Steffen Urban and Pascal Pfeiffer},
-      title        = {nanosam2},
-      year         = {2024},
-      howpublished = {\url{https://github.com/urbste/nanosam2}},
-      note         = {Accessed: 2024-11-21}
-    }
-```
