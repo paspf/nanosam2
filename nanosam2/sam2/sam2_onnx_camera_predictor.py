@@ -391,7 +391,9 @@ class NanoSAM2OnnxPredictor:
         curr     = img_emb.reshape(self.hidden_dim, -1).T[:, np.newaxis, :]
         curr_pos = pos_enc.reshape(self.hidden_dim, -1).T[:, np.newaxis, :]
 
-        memory, memory_pos, _ = self._build_memory_tensors(frame_idx, num_frames)
+        memory, memory_pos, num_obj_ptr_tokens = self._build_memory_tensors(
+            frame_idx, num_frames
+        )
 
         if memory is None:
             # No memory available yet — mirror the PyTorch directly_add_no_mem_embed
@@ -402,11 +404,18 @@ class NanoSAM2OnnxPredictor:
                 1, self.hidden_dim, self.h16, self.w16
             )
 
+        # Build rope_k_mask: 1.0 for spatial memory tokens, 0.0 for obj_ptr tokens
+        M = memory.shape[0]
+        rope_k_mask = np.ones((M, 1, 1), dtype=np.float32)
+        if num_obj_ptr_tokens > 0:
+            rope_k_mask[-num_obj_ptr_tokens:] = 0.0
+
         attended = self._mem_attn_sess.run(
             curr=curr.astype(np.float32),
             curr_pos=curr_pos.astype(np.float32),
             memory=memory,
             memory_pos=memory_pos,
+            rope_k_mask=rope_k_mask,
         )[0]  # (hw16, 1, C)
 
         # Reshape back to (1, C, h16, w16)

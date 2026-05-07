@@ -200,11 +200,18 @@ class MemoryAttentionONNXWrapper(nn.Module):
     """
     Wraps the memory attention module with a fixed (tensor-based) interface.
 
+    The forward inlines the MemoryAttention layer loop so that a ``rope_k_mask``
+    tensor can be threaded directly to the cross-attention RoPEAttention layers.
+    This lets the ONNX graph selectively apply RoPE to spatial-memory keys while
+    leaving object-pointer keys unrotated — matching the PyTorch behaviour where
+    ``num_obj_ptr_tokens`` is passed dynamically.
+
     Inputs:
         curr        – (HW, B, C)       current vision features (seq-first)
         curr_pos    – (HW, B, C)       positional encoding for current features
         memory      – (M,  B, mem_dim) concatenated memory bank  (dynamic M)
         memory_pos  – (M,  B, mem_dim) positional encoding for memory bank
+        rope_k_mask – (M,  1, 1)       1.0 for spatial memory, 0.0 for obj ptrs
 
     Output:
         attended    – (HW, B, C)       memory-conditioned features (seq-first)
@@ -218,18 +225,48 @@ class MemoryAttentionONNXWrapper(nn.Module):
 
     def forward(
         self,
-        curr:       torch.Tensor,
-        curr_pos:   torch.Tensor,
-        memory:     torch.Tensor,
-        memory_pos: torch.Tensor,
+        curr:        torch.Tensor,
+        curr_pos:    torch.Tensor,
+        memory:      torch.Tensor,
+        memory_pos:  torch.Tensor,
+        rope_k_mask: torch.Tensor,
     ) -> torch.Tensor:
-        return self.memory_attention(
-            curr=curr,
-            memory=memory,
-            curr_pos=curr_pos,
-            memory_pos=memory_pos,
-            num_obj_ptr_tokens=0,
-        )
+        ma = self.memory_attention
+
+        output = curr
+        if ma.pos_enc_at_input and curr_pos is not None:
+            output = output + 0.1 * curr_pos
+
+        if ma.batch_first:
+            output     = output.transpose(0, 1)
+            curr_pos   = curr_pos.transpose(0, 1)
+            memory     = memory.transpose(0, 1)
+            memory_pos = memory_pos.transpose(0, 1)
+
+        # Reshape mask for broadcasting with (B, heads, M, D_head)
+        # Input: (M, 1, 1) → (1, 1, M, 1)
+        rope_k_mask_4d = rope_k_mask.permute(1, 2, 0).unsqueeze(-1)
+
+        for layer in ma.layers:
+            # Self-attention (RoPE applied to all tokens, no mask needed)
+            output = layer._forward_sa(output, curr_pos)
+            # Cross-attention with selective RoPE via mask
+            tgt2 = layer.norm2(output)
+            q_ca = tgt2 + curr_pos if layer.pos_enc_at_cross_attn_queries else tgt2
+            k_ca = memory + memory_pos if layer.pos_enc_at_cross_attn_keys else memory
+            tgt2 = layer.cross_attn_image(
+                q_ca, k_ca, memory, rope_k_mask=rope_k_mask_4d
+            )
+            output = output + layer.dropout2(tgt2)
+            # MLP
+            tgt2 = layer.norm3(output)
+            tgt2 = layer.linear2(layer.dropout(layer.activation(layer.linear1(tgt2))))
+            output = output + layer.dropout3(tgt2)
+
+        normed_output = ma.norm(output)
+        if ma.batch_first:
+            normed_output = normed_output.transpose(0, 1)
+        return normed_output
 
 
 # ---------------------------------------------------------------------------
@@ -296,26 +333,44 @@ def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
         child.register_buffer("_rope_cos", cos_buf)
         child.register_buffer("_rope_sin", sin_buf)
 
-        # Patch forward to use _rotate_real instead of apply_rotary_enc
-        def _make_fwd():
-            def _fwd(self, q, k, v, num_k_exclude_rope=0):
-                q = self.q_proj(q)
-                k = self.k_proj(k)
-                v = self.v_proj(v)
-                q = self._separate_heads(q, self.num_heads)
-                k = self._separate_heads(k, self.num_heads)
-                v = self._separate_heads(v, self.num_heads)
-                num_k_rope = k.size(-2) - num_k_exclude_rope
-                q = _rotate_real(q, self._rope_cos, self._rope_sin)
-                k_r = _rotate_real(k[:, :, :num_k_rope],
-                                   self._rope_cos, self._rope_sin)
-                k = torch.cat([k_r, k[:, :, num_k_rope:]], dim=2)
-                out = F.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
-                out = self._recombine_heads(out)
-                return self.out_proj(out)
-            return _fwd
-
-        child.forward = types.MethodType(_make_fwd(), child)
+        # Patch forward to use _rotate_real instead of apply_rotary_enc.
+        # Cross-attention layers (rope_k_repeat=True) accept a rope_k_mask
+        # tensor for selective RoPE application; self-attention layers apply
+        # RoPE to all tokens unconditionally.
+        if child.rope_k_repeat:
+            def _make_fwd_cross():
+                def _fwd(self, q, k, v, rope_k_mask=None):
+                    q = self.q_proj(q)
+                    k = self.k_proj(k)
+                    v = self.v_proj(v)
+                    q = self._separate_heads(q, self.num_heads)
+                    k = self._separate_heads(k, self.num_heads)
+                    v = self._separate_heads(v, self.num_heads)
+                    q = _rotate_real(q, self._rope_cos, self._rope_sin)
+                    k_rotated = _rotate_real(k, self._rope_cos, self._rope_sin)
+                    # rope_k_mask: (1, 1, M, 1) — 1.0 keeps rotated, 0.0 keeps original
+                    k = k_rotated * rope_k_mask + k * (1.0 - rope_k_mask)
+                    out = F.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
+                    out = self._recombine_heads(out)
+                    return self.out_proj(out)
+                return _fwd
+            child.forward = types.MethodType(_make_fwd_cross(), child)
+        else:
+            def _make_fwd_self():
+                def _fwd(self, q, k, v, num_k_exclude_rope=0):
+                    q = self.q_proj(q)
+                    k = self.k_proj(k)
+                    v = self.v_proj(v)
+                    q = self._separate_heads(q, self.num_heads)
+                    k = self._separate_heads(k, self.num_heads)
+                    v = self._separate_heads(v, self.num_heads)
+                    q = _rotate_real(q, self._rope_cos, self._rope_sin)
+                    k = _rotate_real(k, self._rope_cos, self._rope_sin)
+                    out = F.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
+                    out = self._recombine_heads(out)
+                    return self.out_proj(out)
+                return _fwd
+            child.forward = types.MethodType(_make_fwd_self(), child)
 
 
 def modify_filename(file_path, str_extension="_modified") -> Path:
@@ -554,11 +609,12 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
                 torch.randn(hw16, 1, 256),
                 torch.randn(M,    1, mem_dim),
                 torch.randn(M,    1, mem_dim),
+                torch.ones(M,     1, 1),         # rope_k_mask
             )
-            input_names  = ["curr", "curr_pos", "memory", "memory_pos"]
+            input_names  = ["curr", "curr_pos", "memory", "memory_pos", "rope_k_mask"]
             output_names = ["attended_features"]
             _mem_len = torch.export.Dim("memory_len", min=1, max=hw16 * 8)
-            d_shapes = (None, None, {0: _mem_len}, {0: _mem_len})
+            d_shapes = (None, None, {0: _mem_len}, {0: _mem_len}, {0: _mem_len})
 
         # ------------------------------------------------------------------
         case _:
