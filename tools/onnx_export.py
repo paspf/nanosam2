@@ -213,9 +213,7 @@ class MemoryAttentionONNXWrapper(nn.Module):
     def __init__(self, predictor):
         super().__init__()
         self.memory_attention = predictor.memory_attention
-        # Compute actual spatial size so freqs_cis are recomputed for this resolution
         hw16 = getattr(predictor, '_export_hw16', None)
-        # Make all RoPE layers inside memory_attention ONNX-safe
         _make_rope_onnx_safe(self.memory_attention, hw16=hw16)
 
     def forward(
@@ -235,104 +233,90 @@ class MemoryAttentionONNXWrapper(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# RoPE ONNX compatibility helper
+# RoPE helper
 # ---------------------------------------------------------------------------
-
-def _rope_real_rotate(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor,
-                      repeat_along_seq: bool = False) -> torch.Tensor:
-    """
-    Apply rotary position encoding using real arithmetic (ONNX-compatible).
-
-    x   : (B, heads, N, D) float  –  after head separation
-    cos : (N, D//2) float          –  cos(theta)
-    sin : (N, D//2) float          –  sin(theta)
-    """
-    # Reshape to (..., N, D//2, 2) real/imag pairs
-    xr = x.float().reshape(*x.shape[:-1], -1, 2)
-
-    # cos/sin are (N, D//2).  We need to broadcast over the (B, heads) leading dims.
-    # x.ndim=4 → 2 leading batch/head dims → prepend 2 ones.
-    n_leading = x.ndim - 2
-    c = cos.view(*([1] * n_leading), *cos.shape)  # (1, 1, N, D//2)
-    s = sin.view(*([1] * n_leading), *sin.shape)
-
-    if repeat_along_seq:
-        seq_len = xr.shape[-3]
-        base_len = c.shape[-2]
-        if seq_len != base_len:
-            # Repeat enough times then slice to exact seq_len
-            r = (seq_len + base_len - 1) // base_len  # ceiling division
-            c = c.repeat(*([1] * (c.ndim - 2)), r, 1)[..., :seq_len, :]
-            s = s.repeat(*([1] * (s.ndim - 2)), r, 1)[..., :seq_len, :]
-
-    out_real = xr[..., 0] * c - xr[..., 1] * s
-    out_imag = xr[..., 0] * s + xr[..., 1] * c
-    return torch.stack([out_real, out_imag], dim=-1).flatten(-2).type_as(x)
-
 
 def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
     """
-    Recursively replace complex RoPE ops with real-arithmetic equivalents
-    so that the module can be exported to ONNX without complex dtypes.
+    Patch all RoPEAttention layers inside *module* so they use real arithmetic
+    instead of complex ops, making them compatible with the dynamo ONNX exporter.
 
-    hw16 : if given, recompute freqs_cis for this number of spatial tokens
-           (needed when the model's stored feat_sizes don't match the actual
-           export resolution, e.g. hiera at 1024×1024 with feat_sizes=[32,32]).
+    Complex-number operations (view_as_complex, unsqueeze on complex tensors, etc.)
+    have no ONNX mapping. We replace them with equivalent real multiply-add ops.
+
+    hw16: if given, first resize freqs_cis to match the export resolution
+          (e.g. hiera at 1024×1024 needs 4096 tokens, not the checkpoint default).
     """
+    import math, types
+    import torch.nn.functional as F
     from nanosam2.sam2.modeling.sam.transformer import RoPEAttention
-    import types
 
-    for name, child in list(module.named_children()):
-        if isinstance(child, RoPEAttention):
-            # ---- Recompute freqs_cis if stored size doesn't match hw16 ----
-            if hw16 is not None and child.freqs_cis.shape[0] != hw16:
-                import math
-                side = int(math.isqrt(hw16))
-                child.freqs_cis = child.compute_cis(end_x=side, end_y=side)
+    # Maximum number of memory frames we ever concatenate.  The cos/sin buffers
+    # for cross-attention layers (rope_k_repeat=True) are pre-tiled to this
+    # many repetitions so that a *dynamic* slice [:N] at runtime is all that is
+    # needed — no repeat op appears in the ONNX graph.
+    MAX_MEM_TILES = 8
 
-            # ---- Extract cos/sin from the complex freqs_cis buffer --------
-            freqs_cis = child.freqs_cis.cpu().to(torch.complex64)
-            # freqs_cis: (N, D//2) complex  →  extract as real tensors
-            # PyTorch .real/.imag work even during tracing (no complex dtype in ONNX graph)
-            freqs_cos = freqs_cis.real.clone().float()   # (N, D//2)
-            freqs_sin = freqs_cis.imag.clone().float()   # (N, D//2)
+    def _rotate_real(x: torch.Tensor, cos: torch.Tensor,
+                     sin: torch.Tensor) -> torch.Tensor:
+        """Real-arithmetic RoPE rotation.  x: (B, heads, N, D).
 
-            # Store as registered buffers so they are exported inside the model
-            child.register_buffer("_rope_cos", freqs_cos)
-            child.register_buffer("_rope_sin", freqs_sin)
+        cos/sin may be longer than N (pre-tiled).  We always slice to the
+        actual sequence length via a dynamic ONNX Slice node — no repeat
+        needed at runtime.
+        """
+        xr = x.float().reshape(*x.shape[:-1], -1, 2)  # (..., N, D//2, 2)
+        N = xr.shape[-3]                               # actual seq len (may be symbolic)
+        n_lead = x.ndim - 2
+        c = cos.view(*([1] * n_lead), *cos.shape)[..., :N, :]  # (1,1,N,D//2)
+        s = sin.view(*([1] * n_lead), *sin.shape)[..., :N, :]
+        out_r = xr[..., 0] * c - xr[..., 1] * s
+        out_i = xr[..., 0] * s + xr[..., 1] * c
+        return torch.stack([out_r, out_i], dim=-1).flatten(-2).type_as(x)
 
-            # ---- Patch the forward to use real arithmetic ------------------
-            rope_k_repeat = child.rope_k_repeat
-
-            def _make_new_forward(attn: RoPEAttention, repeat_k: bool):
-                def new_forward(self, q, k, v, num_k_exclude_rope: int = 0):
-                    q = self.q_proj(q)
-                    k = self.k_proj(k)
-                    v = self.v_proj(v)
-
-                    q = self._separate_heads(q, self.num_heads)
-                    k = self._separate_heads(k, self.num_heads)
-                    v = self._separate_heads(v, self.num_heads)
-
-                    num_k_rope = k.size(-2) - num_k_exclude_rope
-
-                    q = _rope_real_rotate(q, self._rope_cos, self._rope_sin, False)
-                    k_rope = k[:, :, :num_k_rope]
-                    k_rope = _rope_real_rotate(k_rope, self._rope_cos, self._rope_sin,
-                                               repeat_along_seq=repeat_k)
-                    k = torch.cat([k_rope, k[:, :, num_k_rope:]], dim=2)
-
-                    out = F.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
-                    out = self._recombine_heads(out)
-                    out = self.out_proj(out)
-                    return out
-
-                return new_forward
-
-            child.forward = types.MethodType(_make_new_forward(child, rope_k_repeat),
-                                             child)
+    for child in module.modules():
+        if not isinstance(child, RoPEAttention):
+            continue
+        # Resize freqs_cis if the stored size doesn't match the export resolution
+        if hw16 is not None and child.freqs_cis.shape[0] != hw16:
+            side = int(math.isqrt(hw16))
+            child.freqs_cis = child.compute_cis(end_x=side, end_y=side)
+        # Extract cos/sin as plain float32 buffers (no complex dtype in graph).
+        # For cross-attention layers the buffers are pre-tiled to MAX_MEM_TILES
+        # repetitions so that slicing [:N] at runtime handles any memory length.
+        fc = child.freqs_cis.cpu().to(torch.complex64)
+        cos_base = fc.real.clone().float()   # (N_base, D//2)
+        sin_base = fc.imag.clone().float()
+        if child.rope_k_repeat:
+            cos_buf = cos_base.repeat(MAX_MEM_TILES, 1)  # (MAX_MEM_TILES*N_base, D//2)
+            sin_buf = sin_base.repeat(MAX_MEM_TILES, 1)
         else:
-            _make_rope_onnx_safe(child, hw16=hw16)
+            cos_buf = cos_base
+            sin_buf = sin_base
+        child.register_buffer("_rope_cos", cos_buf)
+        child.register_buffer("_rope_sin", sin_buf)
+
+        # Patch forward to use _rotate_real instead of apply_rotary_enc
+        def _make_fwd():
+            def _fwd(self, q, k, v, num_k_exclude_rope=0):
+                q = self.q_proj(q)
+                k = self.k_proj(k)
+                v = self.v_proj(v)
+                q = self._separate_heads(q, self.num_heads)
+                k = self._separate_heads(k, self.num_heads)
+                v = self._separate_heads(v, self.num_heads)
+                num_k_rope = k.size(-2) - num_k_exclude_rope
+                q = _rotate_real(q, self._rope_cos, self._rope_sin)
+                k_r = _rotate_real(k[:, :, :num_k_rope],
+                                   self._rope_cos, self._rope_sin)
+                k = torch.cat([k_r, k[:, :, num_k_rope:]], dim=2)
+                out = F.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
+                out = self._recombine_heads(out)
+                return self.out_proj(out)
+            return _fwd
+
+        child.forward = types.MethodType(_make_fwd(), child)
+
 
 def modify_filename(file_path, str_extension="_modified") -> Path:
     """
@@ -441,10 +425,10 @@ def test_torch_model(torch_model:torch.nn, input, silent=False, use_unpack_opera
 
 
 def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list = [3, 512, 512]):
-    """Return (torch_model, torch_input, use_unpack_operator, input_names, output_names, dynamic_axes)."""
+    """Return (torch_model, torch_input, use_unpack_operator, input_names, output_names, dynamic_shapes)."""
     input_names         = ["input"]
     output_names        = None   # None means let torch auto-name
-    d_axes              = None
+    d_shapes            = None
     use_unpack_operator = True
 
     H, W = img_shape[1], img_shape[2]
@@ -511,8 +495,8 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
                             "point_coords", "point_labels"]
             output_names = ["low_res_masks", "high_res_masks", "iou_predictions",
                             "obj_ptr", "object_score_logits"]
-            d_axes = {"point_coords": {1: "num_points"},
-                      "point_labels": {1: "num_points"}}
+            _num_pts = torch.export.Dim("num_points", min=1, max=1024)
+            d_shapes = (None, None, None, {1: _num_pts}, {1: _num_pts})
 
         # ------------------------------------------------------------------
         case "mask-decoder":
@@ -530,8 +514,8 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
                             "point_coords", "point_labels"]
             output_names = ["low_res_masks", "high_res_masks", "iou_predictions",
                             "obj_ptr", "object_score_logits"]
-            d_axes = {"point_coords": {1: "num_points"},
-                      "point_labels": {1: "num_points"}}
+            _num_pts = torch.export.Dim("num_points", min=1, max=1024)
+            d_shapes = (None, None, None, {1: _num_pts}, {1: _num_pts})
 
         # ------------------------------------------------------------------
         case "mask-decoder-transformer":
@@ -544,7 +528,8 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
                 torch.randn(objects_limit, tokens_limit, 256),
             )
             input_names  = ["src", "pos_src", "tokens"]
-            d_axes = {"tokens": {1: "tokens_dyn_input_num_points"}}
+            _tok = torch.export.Dim("tokens_dyn_input_num_points", min=1, max=1024)
+            d_shapes = (None, None, {1: _tok})
 
         # ------------------------------------------------------------------
         case "memory-encoder":
@@ -572,17 +557,15 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
             )
             input_names  = ["curr", "curr_pos", "memory", "memory_pos"]
             output_names = ["attended_features"]
-            d_axes = {
-                "memory":     {0: "memory_len"},
-                "memory_pos": {0: "memory_len"},
-            }
+            _mem_len = torch.export.Dim("memory_len", min=1, max=hw16 * 8)
+            d_shapes = (None, None, {0: _mem_len}, {0: _mem_len})
 
         # ------------------------------------------------------------------
         case _:
             print(f"Unknown model block: {block}")
             exit()
 
-    return (torch_model, torch_input, use_unpack_operator, input_names, output_names, d_axes)
+    return (torch_model, torch_input, use_unpack_operator, input_names, output_names, d_shapes)
 
 def save_model_constants(predictor, model_name: str, out_dir: Path) -> Path:
     """
@@ -627,7 +610,7 @@ def save_model_constants(predictor, model_name: str, out_dir: Path) -> Path:
 
 
 def export_model_block(m: ModelSource, block: str, out_dir: Path, img_shape: list,
-                       use_simplify: bool = False, opset_version: int = 18):
+                       use_simplify: bool = False, opset_version: int = 24):
     """
     Export a building block of nanosam2 to ONNX.  Not all blocks can be converted.
     """
@@ -636,7 +619,7 @@ def export_model_block(m: ModelSource, block: str, out_dir: Path, img_shape: lis
     predictor = build_sam2_video_predictor(m.cfg, m.checkpoint, torch.device("cpu"))
     npz_path = save_model_constants(predictor, m.name, out_dir)
     print(f" - Constants saved to {npz_path}")
-    torch_model, torch_input, use_unpack_operator, input_names, output_names, d_axes = \
+    torch_model, torch_input, use_unpack_operator, input_names, output_names, d_shapes = \
         get_block_and_inputs(predictor=predictor, block=block, img_shape=img_shape)
 
     print(" - Testing torch model ...", end="")
@@ -656,8 +639,8 @@ def export_model_block(m: ModelSource, block: str, out_dir: Path, img_shape: lis
             opset_version=opset_version,
             input_names=input_names,
             output_names=output_names,
-            dynamic_axes=d_axes,
-            dynamo=False,   # use legacy TorchScript-based exporter
+            dynamic_shapes=d_shapes,
+            dynamo=True,
         )
     print("OK")
     print(f" - Model stored in {export_path}")
@@ -725,7 +708,8 @@ if __name__ == "__main__":
                         help="Image shape [C, H, W] to use.")
     parser.add_argument("--encoder_type", type=str, default="resnet18",
                         choices=valid_encoders)
-    parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument("--opset", type=int, default=24,
+                        help="ONNX opset version (default: 24)")
     parser.add_argument("--simplify", action="store_true", help="Simplify model with onnxsim")
 
     args = parser.parse_args()
@@ -760,9 +744,11 @@ if __name__ == "__main__":
 
     if args.export == "all":
         for b in exportable_blocks:
+            print(f"\nExporting block: {b}")
             export_model_block(model, b, out_dir, args.img_shape,
                                use_simplify=args.simplify, opset_version=args.opset)
     else:
+        print(f"\nExporting block: {args.export}")
         export_model_block(model, args.export, out_dir, args.img_shape,
                            use_simplify=args.simplify, opset_version=args.opset)
     print("done.")

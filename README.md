@@ -99,21 +99,21 @@ Run the exporter from the `nanosam2/` directory:
 
 ```bash
 # ResNet18 backbone at 512×512 (trained resolution)
-python tools/onnx_export.py --encoder_type resnet18 --export all --output_path model_exports --opset 18 --img_shape 3 512 512
+python tools/onnx_export.py --encoder_type resnet18 --export all --output_path model_exports --opset 24 --img_shape 3 512 512
 
 # Original SAM2.1 Hiera-Small backbone at 1024×1024 (trained resolution)
 python tools/onnx_export.py \
     --encoder_type hiera_small \
     --export all \
     --output_path model_exports \
-    --opset 18 \
+    --opset 24 \
     --img_shape 3 1024 1024
 ```
 
 Individual blocks can be exported by replacing `all` with one of:
 `image-encoder`, `image-encoder-trunk`, `sam-heads`, `memory-encoder`, `memory-attention`.
 
-This produces files named `<model>-<block>-sa1-v01-op18.onnx` in `model_exports/`.
+This produces files named `<model>-<block>-sa1-v01-op24.onnx` in `model_exports/`.
 
 ### Inference Demos (ONNX Runtime)
 
@@ -147,11 +147,7 @@ python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/b
 **Using the Hiera-Small backbone** at 1024×1024:
 
 ```bash
-python demos/onnx_live_demo.py \
-    --model_dir model_exports \
-    --encoder_prefix sam2.1_small \
-    --image_size 1024 \
-    --video 0
+python demos/onnx_live_demo.py --model_dir model_exports --encoder_prefix sam2.1_small --image_size 1024 --video 0
 ```
 
 **Key controls during the demo:**
@@ -161,6 +157,31 @@ python demos/onnx_live_demo.py \
 | Left mouse button (drag) | Draw a bounding box to add / re-initialise an object |
 | `R` | Reset tracking, re-initialise on the next frame |
 | `Q` / `ESC` | Quit |
+
+### Model Comparison (PyTorch vs ONNX)
+
+The `demos/compare_models.py` script runs both the PyTorch and ONNX predictors on the same video source with identical box prompts and displays their outputs side by side.
+It also produces a CSV with per-frame metrics (MSE and IoU, using PyTorch as reference) and can optionally save the binary mask images for both models.
+
+```bash
+python demos/compare_models.py --config nanosam2.1_resnet18 --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --model_dir model_exports --video videos/bedroom --box 230,134,294,219 --csv comparison.csv --save_masks mask_output --max_frames 100
+```
+
+> **Note:** The ONNX predictor currently tracks a single object at a time.
+> If multiple `--box` arguments are given, only the first one is used.
+
+| Argument | Description |
+|----------|-------------|
+| `--config` | SAM2 config name for the PyTorch model |
+| `--checkpoint` | Path to the PyTorch checkpoint |
+| `--model_dir` | Directory containing the exported ONNX files |
+| `--encoder_prefix` | ONNX file prefix (default: `nanosam2-resnet18`) |
+| `--video` | Path to a video file or image directory |
+| `--box x1,y1,x2,y2` | Bounding box prompt (repeatable for multiple objects) |
+| `--csv FILE` | Output CSV with per-frame MSE, IoU and timing (default: `comparison.csv`) |
+| `--save_masks DIR` | Save per-frame binary mask PNGs for both models |
+| `--max_frames N` | Stop after N frames (0 = unlimited) |
+| `--no_display` | Disable the live window (headless mode) |
 
 ### Todo 
 
