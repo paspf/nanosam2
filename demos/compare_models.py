@@ -198,7 +198,6 @@ def main():
             )
             _, ox_obj_ids, ox_ml = ox_predictor.add_new_points_or_box(
                 frame_idx=0, obj_id=1, box=bbox_np,
-                normalize_coords=False,
             )
 
             pt_masks_np = torch_masks_to_numpy(pt_ml)
