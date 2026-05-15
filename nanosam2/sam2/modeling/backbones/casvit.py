@@ -4,11 +4,8 @@ Code for CAS-ViT
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
 
 import numpy as np
-from einops import rearrange, repeat
-import itertools
 import os
 import copy
 
