@@ -89,7 +89,7 @@ def main():
     # ---- build predictor ---------------------------------------------------
     print(f"Loading ONNX models from: {args.model_dir}")
     predictor = build_onnx_camera_predictor(
-        model_dir=args.model_dir,
+        onnx_dir=args.model_dir,
         encoder_prefix=args.encoder_prefix,
         image_size=args.image_size,
     )
@@ -136,7 +136,7 @@ def main():
                         frame_idx=0,
                         obj_id=obj_counter,
                         box=box,
-                        normalize_coords=False,
+                        normalize_coords=True,
                     )
                 display  = draw_masks(display, obj_ids, mask_logits)
                 if_init  = True
@@ -172,7 +172,7 @@ def main():
                             frame_idx=0,
                             obj_id=obj_counter,
                             box=box,
-                            normalize_coords=False,
+                            normalize_coords=True,
                         )
                         display = draw_masks(display, obj_ids, mask_logits)
                         if_init = True
@@ -195,7 +195,7 @@ def main():
                     frame_idx=0,
                     obj_id=obj_counter,
                     box=box,
-                    normalize_coords=False,
+                    normalize_coords=True,
                 )
                 display = draw_masks(display, obj_ids, mask_logits)
                 drawer.reset()

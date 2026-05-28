@@ -1,30 +1,28 @@
 # nanosam2
 
-NanoSAM2 is a lightweight, deployment-friendly implementation of [SAM2.1](https://github.com/facebookresearch/sam2),
+nanoSAM2 is a lightweight, deployment-friendly implementation of [SAM2.1](https://github.com/facebookresearch/sam2),
 inspired by [NanoSAM](https://github.com/NVIDIA-AI-IOT/nanosam).
 
 While the original SAM2.1 Hiera backbones run well on high-end GPUs, they remain difficult to deploy on
 edge devices or in environments where PyTorch is unavailable.
-NanoSAM2 addresses this with two complementary strategies:
+nanosam2 addresses this with two complementary strategies:
 
 - **Lightweight backbones** — drop-in replacements for the Hiera trunk (ResNet18, MobileNetV3-Large,
   CasViT-S) that are significantly smaller and faster, trained via knowledge distillation from SAM2.1.
-- **Pure ONNX runtime** — all model components (image encoder, SAM heads, memory encoder, memory
-  attention) can be exported to ONNX and run entirely with `onnxruntime` and `numpy`.
-  No PyTorch installation is required at inference time.
+- **Pure ONNX runtime** — all nanosam2 model components (image encoder, SAM heads, memory encoder, memory
+  attention) can be exported to ONNX and run entirely using `onnxruntime`.
+  No PyTorch installation is required at inference time when opting for the onnx camera predictor.
+
+Also there is support for a camera predictor, which enables live video inference for real-time object tracking directly from camera or video streams. Meaning there is no need for loading all frames at once into the model.
+
 
 ## Installation
 
 ### Dependencies and Prerequirements
 
  - Create a new Python 3.12+ environment and clone the repository.
- - Install the dependencies listed below:
-
-```
-pip install matplotlib torchvision tqdm hydra-core pycocotools requests iopath opencv-python
-```
-
  - Install the repository as editable package `pip install -e .`
+ - All dependencies should be fetched automatically
 
 ### Download checkpoints
 
@@ -44,7 +42,7 @@ Extracting all frames of a video uns FFmpeg:
 ffmpeg -i video.mp4 05%d.jpg
 ```
 
-Calling the inference script with ResNet18 backend:
+Calling the inference script with ResNet18 backbone:
 
 ```
 python demos/torch_video_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <directory with exported video frames>
@@ -56,28 +54,33 @@ python demos/torch_video_predictor.py --config nanosam2.1_resnet18.yaml --checkp
 Stream a video (from a camera or video file source) frame by frame into Nanosam2. Start object tracking from any frame in the stream.
 
 
-For ResNet18 backend with two box prompts:
+**For ResNet18 backbone (with 512x512 px) with two box prompts:**
 
 ```bash
-python demos/torch_camera_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
+python demos/torch_camera_predictor.py --config nanosam2.1_resnet18_512px.yaml --checkpoint weights/nanosam2-resnet18-sa1-v01.pth --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
 ```
 
-For ResNet18 backend, use mouse to set box prompt:
+**For ResNet18 backbone, use mouse and webcam with id 0 to set box prompt:**
 
 ```bash
-python demos/torch_camera_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --video <Video device id or path to mp4 file>
+python demos/torch_camera_predictor.py --config nanosam2.1_resnet18.yaml --checkpoint weights/nanosam2-resnet18-sa1-v01.pth --video 0
 ```
 
-For MobileNetV3 backend:
+**For MobileNetV3 backbone:**
 
 ```bash
-python demos/torch_camera_predictor.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth --video <Video device id or path to mp4 file>
+python demos/torch_camera_predictor.py --config nanosam2.1_mobilenet_v3_large.yaml --checkpoint weights/nanosam2-mobilenetv3-large-sa1-v01.pth --video <Video device id or path to mp4 file>
 ```
 
-For original hiera backend:
+**For casvit backbone:**
+```bash
+python demos/torch_camera_predictor.py --config nanosam2.1_casvit_s.yaml --checkpoint weights/nanosam2-casvit-s-sa1-v01.pth --video <Video device id or path to mp4 file>
+```
+
+**For original hiera backbone:**
 
 ```bash
-python demos/torch_camera_predictor.py --config sam2.1_hiera_s.yaml --checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
+python demos/torch_camera_predictor.py --config sam2.1_hiera_s.yaml --checkpoint weights/sam2.1_hiera_small.pt --video <Video device id or path to mp4 file>
 ```
 
 
@@ -87,27 +90,22 @@ python demos/torch_camera_predictor.py --config sam2.1_hiera_s.yaml --checkpoint
 NanoSAM2 can be fully exported to ONNX so that **no PyTorch is required at inference time** — only `numpy` and `onnxruntime`.
 The model is split into four independent ONNX files: image encoder, SAM heads, memory encoder, and memory attention.
 
-### Additional dependencies
-
-```bash
-pip install onnx onnxruntime onnxsim
-```
-
 ### Export model blocks
 
 Run the exporter from the `nanosam2/` directory:
 
 ```bash
-# ResNet18 backbone at 512×512 (trained resolution)
-python tools/onnx_export.py --encoder_type resnet18 --export all --output_path model_exports --opset 24 --img_shape 3 512 512
+# ResNet18 backbone at 512×512 - recommended
+python tools/onnx_export.py --encoder_type resnet18-512 --checkpoint weights/nanosam2-resnet18-sa1-v01.pth --export all --output_path onnx_export_resnet_512 --opset 24
 
-# Original SAM2.1 Hiera-Small backbone at 1024×1024 (trained resolution)
-python tools/onnx_export.py \
-    --encoder_type hiera_small \
-    --export all \
-    --output_path model_exports \
-    --opset 24 \
-    --img_shape 3 1024 1024
+# ResNet18 backbone at 1024×1024
+python tools/onnx_export.py --encoder_type resnet18-1024 --checkpoint weights/nanosam2-resnet18-sa1-v01.pth --export all --output_path onnx_export_resnet_1024 --opset 24
+
+# MobileNetV3 backbone at 1024×1024
+python tools/onnx_export.py --encoder_type mobilenetV3 --checkpoint weights/nanosam2-mobilenetv3-large-sa1-v01.pth --export all --output_path onnx_export_mobilenet --opset 24
+
+# CaseViT at 1024×1024
+python tools/onnx_export.py --encoder_type casvit_s --checkpoint weights/nanosam2-casvit-s-sa1-v01.pth --export all --output_path onnx_export_casevit --opset 24
 ```
 
 Individual blocks can be exported by replacing `all` with one of:
@@ -124,13 +122,13 @@ and tracks objects selected with a bounding-box prompt.
 
 ```bash
 # Camera
-python demos/onnx_camera_predictor.py --model_dir model_exports --video 0
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-resnet18 --model_dir onnx_export_resnet_512 --video 0
 
 # Video file
-python demos/onnx_camera_predictor.py --model_dir model_exports --video path/to/video.mp4
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-resnet18 --model_dir onnx_export_resnet_512 --video path/to/video.mp4
 
-# Directory of images (sorted alphabetically, loops)
-python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom
+# Directory of images (sorted alphabetically)
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-resnet18 --model_dir onnx_export_resnet_512 --video videos/bedroom
 ```
 
 **Pre-set box mode** — tracking starts immediately, no mouse input needed.
@@ -138,16 +136,26 @@ Pass one or more `--box x1,y1,x2,y2` arguments (pixel coordinates on the origina
 
 ```bash
 # Single object
-python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom --box 230,134,294,219
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-resnet18 --model_dir onnx_export_resnet_512 --video videos/bedroom --box 230,134,294,219
 
 # Two objects
-python demos/onnx_camera_predictor.py --model_dir model_exports --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-resnet18 --model_dir onnx_export_resnet_512 --video videos/bedroom --box 230,134,294,219 --box 353,11,451,122
 ```
 
-**Using the Hiera-Small backbone** at 1024×1024:
+**For MobileNetV3 backbone** at 1024×1024:
+```bash
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-mobilenetV3 --model_dir onnx_export_mobilenet --image_size 1024 --video videos/bedroom 
+```
+
+**For CaseViT backbone** at 1024×1024:
+```bash
+python demos/onnx_camera_predictor.py --encoder_prefix nanosam2-casvit_s --model_dir onnx_export_casevit --image_size 1024 --video videos/bedroom 
+```
+
+**For Hiera-Small backbone** at 1024×1024:
 
 ```bash
-python demos/onnx_live_demo.py --model_dir model_exports --encoder_prefix sam2.1_small --image_size 1024 --video 0
+python demos/onnx_live_demo.py --encoder_prefix sam2.1_small --model_dir model_exports --image_size 1024 --video 0
 ```
 
 **Key controls during the demo:**
@@ -164,7 +172,7 @@ The `demos/compare_models.py` script runs both the PyTorch and ONNX predictors o
 It also produces a CSV with per-frame metrics (MSE and IoU, using PyTorch as reference) and can optionally save the binary mask images for both models.
 
 ```bash
-python demos/compare_models.py --config nanosam2.1_resnet18 --checkpoint results/sam2.1_hiera_s_resnet18/checkpoint.pth --model_dir model_exports --video videos/bedroom --box 230,134,294,219 --csv comparison.csv --save_masks mask_output --max_frames 100
+python demos/compare_models.py --config nanosam2.1_resnet18_512px --checkpoint weights/nanosam2-resnet18-sa1-v01.pth --onnx_dir model_exports --video videos/bedroom --box 230,134,294,219 --csv comparison.csv --save_masks mask_output --max_frames 100
 ```
 
 > **Note:** The ONNX predictor currently tracks a single object at a time.
@@ -174,7 +182,7 @@ python demos/compare_models.py --config nanosam2.1_resnet18 --checkpoint results
 |----------|-------------|
 | `--config` | SAM2 config name for the PyTorch model |
 | `--checkpoint` | Path to the PyTorch checkpoint |
-| `--model_dir` | Directory containing the exported ONNX files |
+| `--onnx_dir` | Directory containing the exported ONNX files |
 | `--encoder_prefix` | ONNX file prefix (default: `nanosam2-resnet18`) |
 | `--video` | Path to a video file or image directory |
 | `--box x1,y1,x2,y2` | Bounding box prompt (repeatable for multiple objects) |
@@ -259,6 +267,12 @@ python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam
 ```bash
 python nanosam2/tools/train.py --images /path/to/images --output_dir results/sam2.1_hiera_s_mobilenetV3_large --nanosam2_config nanosam2.1_mobilenet_v3_large --sam2_config sam2.1_hiera_s --teacher_checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 --coco_root /path/to/coco --coco_ann /path/to/coco/annotations
 ```
+
+### Train with Casvit backbone and distill from sam2.1_hiera_s
+```bash
+python nanosam2/tools/train.py --images /path/to/images --output_dir results/casvit_s --nanosam2_config nanosam2.1_casvit_s --sam2_config sam2.1_hiera_s --teacher_checkpoint sam2_checkpoints/sam2.1_hiera_small.pt --batch_size 16 --num_epochs 100 --coco_root /path/to/coco --coco_ann /path/to/coco/annotations
+```
+
 
 ## Evaluate on the validation set
 

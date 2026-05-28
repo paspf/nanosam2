@@ -89,7 +89,7 @@ def _parse_args():
     p.add_argument("--device", default="cpu",
                    help="PyTorch device (default: cpu)")
     # ONNX model
-    p.add_argument("--model_dir", default="model_exports",
+    p.add_argument("--onnx_dir", default="model_exports",
                    help="Directory with ONNX files")
     p.add_argument("--encoder_prefix", default="nanosam2-resnet18",
                    help="ONNX file prefix")
@@ -127,13 +127,6 @@ def main():
         print(f"[ERROR] {e}")
         sys.exit(1)
 
-    # The ONNX predictor currently tracks a single object at a time.
-    # Use only the first box for a fair comparison.
-    if len(boxes) > 1:
-        print(f"[WARNING] The ONNX predictor supports single-object tracking. "
-              f"Using only the first box; ignoring {len(boxes) - 1} extra box(es).")
-    box = boxes[0]
-
     # ---- set up mask output dir --------------------------------------------
     mask_dir: Path | None = None
     if args.save_masks:
@@ -154,7 +147,7 @@ def main():
 
     print("Building ONNX predictor ...")
     ox_predictor = build_onnx_camera_predictor(
-        model_dir=args.model_dir,
+        onnx_dir=args.onnx_dir,
         encoder_prefix=args.encoder_prefix,
         image_size=args.image_size,
     )
@@ -190,18 +183,19 @@ def main():
             pt_predictor.load_first_frame(rgb)
             ox_predictor.load_first_frame(rgb)
 
-            x1, y1, x2, y2 = box
-            bbox_np = np.array([[x1, y1], [x2, y2]], dtype=np.float32)
+            for obj_id, box in enumerate(boxes, start=1):
+                x1, y1, x2, y2 = box
+                bbox_np = np.array([[x1, y1], [x2, y2]], dtype=np.float32)
 
-            _, pt_obj_ids, pt_ml = pt_predictor.add_new_prompt(
-                frame_idx=0, obj_id=1, bbox=bbox_np,
-            )
-            _, ox_obj_ids, ox_ml = ox_predictor.add_new_points_or_box(
-                frame_idx=0, obj_id=1, box=bbox_np,
-            )
+                _, pt_obj_ids, pt_ml = pt_predictor.add_new_prompt(
+                    frame_idx=0, obj_id=obj_id, bbox=bbox_np,
+                )
+                _, ox_obj_ids, ox_ml = ox_predictor.add_new_points_or_box(
+                    frame_idx=0, obj_id=obj_id, box=bbox_np,
+                )
 
             pt_masks_np = torch_masks_to_numpy(pt_ml)
-            ox_masks_np = ox_ml  # already numpy (1, 1, H, W)
+            ox_masks_np = ox_ml  # already numpy (N, 1, H, W)
 
         else:
             # ---- track on subsequent frames --------------------------------

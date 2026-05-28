@@ -1,8 +1,6 @@
-"""
-Shared utilities for NanoSAM2 live demos.
-
-Imported by torch_camera_predictor.py and onnx_camera_predictor.py.
-"""
+# Shared utilities for NanoSAM2 live demos.
+# 
+# Imported by torch_camera_predictor.py and onnx_camera_predictor.py.
 
 from __future__ import annotations
 

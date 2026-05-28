@@ -1,12 +1,7 @@
 # Nanosam2 Video Frames Example
 #
 # Run inferences on the frames exported form a video.
-#
-# To run this script, create a new python environment (3.12) install all packages listed in the README.md file
-# and add the "nanosam2" directory to your pythonpath (or install the package).
-# If you are using bash add the following line to your .bashrc
-# export PYTHONPATH="<path-to>/nanosam2"
-
+# The video used on this demo: https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/notebooks/videos/bedroom.mp4
 
 
 import os
@@ -101,10 +96,6 @@ print("Loading video into nanosam2...")
 inference_state = predictor.init_state(video_path=args.video)
 
 predictor.reset_state(inference_state)
-
-# ---------------------------------------------------------------------------
-# for demo video: https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/notebooks/videos/bedroom.mp4
-# ---------------------------------------------------------------------------
 
 print("\n#1: Set two points and predict a mask...")
 ann_frame_idx = 0  # the frame index we interact with

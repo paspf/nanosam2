@@ -9,9 +9,9 @@ from setuptools import find_packages, setup
 
 # Package metadata
 NAME = "nanosam2"
-VERSION = "1.0"
+VERSION = "1.1"
 DESCRIPTION = "nanosam2: Segment Anything in Images and Videos, only tiny."
-URL = "https://github.com/urbste/nanosam2"
+URL = "https://github.com/paspf/nanosam2"
 AUTHOR = "nanosam2 contributors"
 LICENSE = "Apache 2.0"
 
@@ -21,13 +21,21 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 # Required dependencies
 REQUIRED_PACKAGES = [
-    "torch>=2.3.1",
-    "torchvision>=0.18.1",
-    "numpy>=1.24.4",
-    "tqdm>=4.66.1",
+    "torch>=2.9.1",
+    "torchvision>=0.24.1",
+    "numpy>=1.2.6",
+    "tqdm>=4.67.1",
     "hydra-core>=1.3.2",
     "iopath>=0.1.10",
-    "pillow>=9.4.0",
+    "pillow>=12.0.0",
+    "matplotlib>=3.10.8",
+    "opencv-python>=4.12.0",
+    "requests>=2.32.5",
+    "pycocotools>=2.0.11",
+    "onnx>=1.21.0",
+    "onnxruntime>=1.25.1",
+    "onnxsim>=0.6.2",
+    "timm>=1.0.27"
 ]
 
 EXTRA_PACKAGES = {
@@ -39,7 +47,6 @@ EXTRA_PACKAGES = {
         "eva-decord>=0.6.1",
         "gunicorn>=23.0.0",
         "imagesize>=1.4.1",
-        "pycocotools>=2.0.8",
         "strawberry-graphql>=0.243.0",
     ],
     "dev": [
@@ -50,9 +57,7 @@ EXTRA_PACKAGES = {
         "pandas>=2.2.2",
         "scikit-image>=0.24.0",
         "tensorboard>=2.17.0",
-        "pycocotools>=2.0.8",
         "tensordict>=0.5.0",
-        "opencv-python>=4.7.0",
         "submitit>=1.5.1",
     ],
 }
@@ -160,7 +165,7 @@ setup(
     include_package_data=True,
     install_requires=REQUIRED_PACKAGES,
     extras_require=EXTRA_PACKAGES,
-    python_requires=">=3.10.0",
+    python_requires=">=3.12.0",
     ext_modules=get_extensions(),
     cmdclass=cmdclass,
 )

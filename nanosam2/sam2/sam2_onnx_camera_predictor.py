@@ -140,6 +140,10 @@ class NanoSAM2OnnxPredictor:
         self.only_obj_ptrs_in_the_past       = only_obj_ptrs_in_the_past
         self.non_overlap_masks               = non_overlap_masks
 
+        # Check if model dir exits
+        if not model_dir.exists():
+            raise FileNotFoundError(f"Model directory {model_dir} not found.")
+
         # Spatial resolution at stride-16 level
         self.h16 = image_size // 16   # 32
         self.w16 = image_size // 16   # 32
@@ -154,6 +158,7 @@ class NanoSAM2OnnxPredictor:
             # file names include "-opXX.onnx")
             matches = sorted(matches, key=lambda p: p.name)
             if not matches:
+                print(f"found ONNX files: {[p.name for p in model_dir.glob('*.onnx')]}")
                 raise FileNotFoundError(
                     f"No ONNX file matching '*{pattern}*.onnx' in {model_dir}"
                 )
@@ -243,13 +248,21 @@ class NanoSAM2OnnxPredictor:
     # Memory bank helpers (numpy)
     # ------------------------------------------------------------------
 
-    def _build_memory_tensors(self, frame_idx: int, num_frames: int
+    def _build_memory_tensors(self, frame_idx: int, num_frames: int,
+                               output_dict: Optional[Dict] = None,
                                ) -> Tuple[np.ndarray, np.ndarray, int]:
         """
         Build (memory, memory_pos, num_obj_ptr_tokens) arrays for memory_attention.
         Mirrors SAM2Base._prepare_memory_conditioned_features (non-init branch).
+
+        Parameters
+        ----------
+        output_dict : dict | None
+            Per-object output dict.  Falls back to the global ``output_dict``
+            when *None* (single-object legacy path).
         """
-        output_dict = self.condition_state["output_dict"]
+        if output_dict is None:
+            output_dict = self.condition_state["output_dict"]
         cond_outs   = output_dict["cond_frame_outputs"]
         non_cond_outs = output_dict["non_cond_frame_outputs"]
 
@@ -382,7 +395,9 @@ class NanoSAM2OnnxPredictor:
         return memory, memory_pos, num_obj_ptr_tokens
 
     def _run_memory_attention(self, img_emb: np.ndarray, pos_enc: np.ndarray,
-                               frame_idx: int, num_frames: int) -> np.ndarray:
+                               frame_idx: int, num_frames: int,
+                               output_dict: Optional[Dict] = None,
+                               ) -> np.ndarray:
         """
         Run memory attention and return the conditioned image embedding
         (1, C, h16, w16).
@@ -392,7 +407,7 @@ class NanoSAM2OnnxPredictor:
         curr_pos = pos_enc.reshape(self.hidden_dim, -1).T[:, np.newaxis, :]
 
         memory, memory_pos, num_obj_ptr_tokens = self._build_memory_tensors(
-            frame_idx, num_frames
+            frame_idx, num_frames, output_dict=output_dict
         )
 
         if memory is None:
@@ -602,20 +617,44 @@ class NanoSAM2OnnxPredictor:
             "cond_frame_outputs"
         ][frame_idx] = out
 
-        # ---- build video-resolution masks ----------------------------------
+        # ---- build video-resolution masks for ALL objects --------------------
         obj_ids  = self.condition_state["obj_ids"]
-        vid_masks = self._upscale_to_video_res(high_res)
+        vid_masks = self._consolidate_init_masks()
         return frame_idx, obj_ids, vid_masks
 
+    def _consolidate_init_masks(self) -> np.ndarray:
+        """
+        Collect the most recent high-res mask for every registered object
+        and return a single (N_objects, 1, video_H, video_W) array.
+        Objects that have no mask yet are filled with NO_OBJ_SCORE.
+        """
+        batch_size = len(self.condition_state["obj_ids"])
+        vH = self.condition_state["video_height"]
+        vW = self.condition_state["video_width"]
+        out_masks = np.full(
+            (batch_size, 1, vH, vW), NO_OBJ_SCORE, dtype=np.float32
+        )
+        temp_dicts = self.condition_state["temp_output_dict_per_obj"]
+        for obj_idx in range(batch_size):
+            # Look through conditioning frames in temp storage
+            temp = temp_dicts.get(obj_idx, {})
+            cond = temp.get("cond_frame_outputs", {})
+            if cond:
+                # Use the latest conditioning frame's high-res mask
+                last_frame = max(cond.keys())
+                high_res = cond[last_frame]["pred_masks_high_res"]  # (1,1,H,W)
+                out_masks[obj_idx: obj_idx + 1] = self._upscale_to_video_res(high_res)
+        return out_masks
+
     def _propagate_in_video_preflight(self) -> None:
-        """Encode conditioning frames into memory (run memory encoder)."""
+        """Encode conditioning frames into memory (run memory encoder per object)."""
         self.condition_state["tracking_has_started"] = True
-        output_dict = self.condition_state["output_dict"]
         temp_dicts  = self.condition_state["temp_output_dict_per_obj"]
 
         hr0, hr1, img_emb_raw, pos_enc = self.condition_state["first_frame_feats"]
 
         for obj_idx, temp in temp_dicts.items():
+            obj_output_dict = self.condition_state["output_dict_per_obj"][obj_idx]
             for frame_idx, out in temp["cond_frame_outputs"].items():
                 # Run memory encoder to create maskmem_features
                 high_res = out["pred_masks_high_res"]
@@ -631,10 +670,8 @@ class NanoSAM2OnnxPredictor:
                 out["maskmem_features"] = maskmem_feat
                 out["maskmem_pos_enc"]  = [maskmem_pos]
 
-                # Store in main output_dict
-                if frame_idx not in output_dict["cond_frame_outputs"]:
-                    output_dict["cond_frame_outputs"][frame_idx] = {}
-                output_dict["cond_frame_outputs"][frame_idx] = out
+                # Store in per-object output_dict
+                obj_output_dict["cond_frame_outputs"][frame_idx] = out
                 self.condition_state["consolidated_frame_inds"][
                     "cond_frame_outputs"
                 ].add(frame_idx)
@@ -655,6 +692,7 @@ class NanoSAM2OnnxPredictor:
         frame_idx : int | None  Override frame counter.
 
         Returns (obj_ids, video_res_masks).
+            video_res_masks : (N_objects, 1, video_H, video_W) float32 logits.
         """
         self._check_constants()
 
@@ -672,46 +710,60 @@ class NanoSAM2OnnxPredictor:
         chw, _, _ = _preprocess_image(img, self.image_size)
         hr0, hr1, img_emb, pos_enc = self._get_feature_maps(chw)
 
-        # ---- memory-conditioned features -----------------------------------
-        img_emb_cond = self._run_memory_attention(
-            img_emb, pos_enc, self.frame_idx,
-            self.condition_state["num_frames"]
-        )
+        obj_ids = self.condition_state["obj_ids"]
+        batch_size = len(obj_ids)
 
-        # ---- SAM heads (no prompts) ----------------------------------------
-        # Empty padding point with label -1
+        # Empty padding point with label -1 (no user prompts during tracking)
         pts = np.zeros((1, 1, 2), dtype=np.float32)
         lbs = np.full((1, 1), -1, dtype=np.int32)
 
-        low_res, high_res, obj_ptr, obj_score = self._run_sam_heads(
-            img_emb_cond, hr0, hr1, pts, lbs
-        )
+        all_high_res = []
+        for obj_idx in range(batch_size):
+            obj_output_dict = self.condition_state["output_dict_per_obj"][obj_idx]
 
-        # ---- memory encoder -----------------------------------------------
-        maskmem_feat, maskmem_pos = self._run_memory_encoder(
-            img_emb, high_res, obj_score   # img_emb: raw backbone feat
-        )
+            # ---- memory-conditioned features for this object ---------------
+            img_emb_cond = self._run_memory_attention(
+                img_emb, pos_enc, self.frame_idx,
+                self.condition_state["num_frames"],
+                output_dict=obj_output_dict,
+            )
 
-        # Cache maskmem_pos_enc if not already done
-        if "maskmem_pos_enc" not in self.condition_state["constants"]:
-            self.condition_state["constants"]["maskmem_pos_enc"] = maskmem_pos
+            # ---- SAM heads (no prompts) ------------------------------------
+            low_res, high_res, obj_ptr, obj_score = self._run_sam_heads(
+                img_emb_cond, hr0, hr1, pts, lbs
+            )
 
-        # ---- store in non-conditioning memory bank -------------------------
-        current_out = {
-            "maskmem_features": maskmem_feat,
-            "maskmem_pos_enc":  [maskmem_pos],
-            "pred_masks":       low_res,
-            "obj_ptr":          obj_ptr,
-        }
-        self._manage_memory(self.frame_idx, current_out)
+            # ---- memory encoder --------------------------------------------
+            maskmem_feat, maskmem_pos = self._run_memory_encoder(
+                img_emb, high_res, obj_score
+            )
 
-        obj_ids   = self.condition_state["obj_ids"]
-        vid_masks = self._upscale_to_video_res(high_res)
+            # Cache maskmem_pos_enc if not already done
+            if "maskmem_pos_enc" not in self.condition_state["constants"]:
+                self.condition_state["constants"]["maskmem_pos_enc"] = maskmem_pos
+
+            # ---- store in per-object non-conditioning memory bank ----------
+            current_out = {
+                "maskmem_features": maskmem_feat,
+                "maskmem_pos_enc":  [maskmem_pos],
+                "pred_masks":       low_res,
+                "obj_ptr":          obj_ptr,
+            }
+            self._manage_memory(self.frame_idx, current_out, obj_idx)
+
+            all_high_res.append(high_res)  # (1, 1, H, W)
+
+        # ---- stack masks across objects and upscale ------------------------
+        stacked = np.concatenate(all_high_res, axis=0)  # (N, 1, H, W)
+        vid_masks = self._upscale_to_video_res(stacked)
         return obj_ids, vid_masks
 
-    def _manage_memory(self, frame_idx: int, current_out: dict) -> None:
-        """Rolling memory bank: keep at most num_maskmem frames."""
-        nc = self.condition_state["output_dict"]["non_cond_frame_outputs"]
+    def _manage_memory(self, frame_idx: int, current_out: dict,
+                       obj_idx: int = 0) -> None:
+        """Rolling memory bank: keep at most num_maskmem frames per object."""
+        nc = self.condition_state["output_dict_per_obj"][obj_idx][
+            "non_cond_frame_outputs"
+        ]
         nc[frame_idx] = current_out
         keys = list(nc.keys())
         if len(nc) > self.num_maskmem:
@@ -747,7 +799,7 @@ class NanoSAM2OnnxPredictor:
 # ---------------------------------------------------------------------------
 
 def build_onnx_camera_predictor(
-    model_dir: Union[str, Path],
+    onnx_dir: Union[str, Path],
     encoder_prefix: Optional[str] = None,
     image_size: int = 512,
     providers: Optional[List[str]] = None,
@@ -762,15 +814,15 @@ def build_onnx_camera_predictor(
     Build a NanoSAM2OnnxPredictor.
 
     The constants .npz file (created by ``tools/onnx_export.py``) must be
-    present in *model_dir* alongside the ONNX files.  No PyTorch is required.
+    present in *onnx_dir* alongside the ONNX files.  No PyTorch is required.
 
     Parameters
     ----------
-    model_dir      : directory containing the ONNX files and the constants .npz.
+    onnx_dir       : directory containing the ONNX files and the constants .npz.
     encoder_prefix : e.g. "nanosam2-resnet18" (optional — auto-detected if None).
     """
     return NanoSAM2OnnxPredictor(
-        model_dir=model_dir,
+        model_dir=onnx_dir,
         encoder_prefix=encoder_prefix,
         image_size=image_size,
         num_maskmem=num_maskmem,

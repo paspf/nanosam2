@@ -724,15 +724,15 @@ if __name__ == "__main__":
           "Nanosam2 ONNX exporter is used to export parts of the Nanosam2 model to ONNX files.\n"
           "These ONNX files can be executed using onnxruntime or further processed and deployed on the desired hardware.\n"
           "\n"
-          " - Use parameter img_shape to set the input shape. Default is [3,512,512].\n"
           "---"
           )
-    models = [
-            ModelSource("sam2.1_small",        "results/sam2.1_hiera_small.pt",                             "../sam2_configs/sam2.1_hiera_s.yaml"),
-            ModelSource("nanosam2-resnet18",    "results/sam2.1_hiera_s_resnet18/checkpoint.pth",             "../sam2_configs/nanosam2.1_resnet18.yaml"),
-            ModelSource("nanosam2-mobilenetV3", "results/sam2.1_hiera_s_mobilenetV3_large/checkpoint.pth",    "../sam2_configs/nanosam2.1_mobilenet_v3_large.yaml"),
-            ModelSource("nanosam2-casvit_s",    "results/sam2.1_hiera_s_casvit_s/checkpoint.pth",            "../sam2_configs/nanosam2.1_casvit_s.yaml"),
-            ]
+    models = dict()
+    models["hiera-small"] = ModelSource("sam2.1_small", None, "../sam2_configs/sam2.1_hiera_s.yaml", [3, 1024, 1024])
+    models["resnet18-512"] = ModelSource("nanosam2-resnet18", None, "../sam2_configs/nanosam2.1_resnet18_512px.yaml", [3, 512, 512])
+    models["resnet18-1024"] = ModelSource("nanosam2-resnet18", None, "../sam2_configs/nanosam2.1_resnet18_1024px.yaml", [3, 1024, 1024])
+    models["mobilenetV3"] = ModelSource("nanosam2-mobilenetV3", None, "../sam2_configs/nanosam2.1_mobilenet_v3_large.yaml", [3, 1024, 1024])
+    models["casvit_s"] = ModelSource("nanosam2-casvit_s", None, "../sam2_configs/nanosam2.1_casvit_s.yaml", [3, 1024, 1024])
+
 
     valid_exports = [
         "nanosam2",
@@ -747,23 +747,15 @@ if __name__ == "__main__":
         "memory-attention",
     ]
 
-    valid_encoders = [
-        "hiera_small",
-        "resnet18",
-        "mobilenetV3_large",
-        "casvit_s",
-    ]
-
     parser = argparse.ArgumentParser("Nanosam2 ONNX exporter")
     parser.add_argument("--export", type=str, default="image-encoder",
                         choices=valid_exports,
                         help="Model block to export.  Use 'all' to export all supported blocks.")
     parser.add_argument("--output_path", type=str, default="model_exports",
                         help="Export directory.")
-    parser.add_argument("--img_shape", nargs="+", type=int, default=[3, 512, 512],
-                        help="Image shape [C, H, W] to use.")
     parser.add_argument("--encoder_type", type=str, default="resnet18",
-                        choices=valid_encoders)
+                        choices=models.keys())
+    parser.add_argument("--checkpoint", type=str, required=True, help="Path to the model checkpoint.")
     parser.add_argument("--opset", type=int, default=24,
                         help="ONNX opset version (default: 24)")
     parser.add_argument("--simplify", action="store_true", help="Simplify model with onnxsim")
@@ -771,21 +763,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
     out_dir = Path(args.output_path)
 
-    match args.encoder_type:
-        case "hiera_small":
-            model = models[0]
-        case "resnet18":
-            model = models[1]
-        case "mobilenetV3_large":
-            model = models[2]
-        case "casvit_s":
-            model = models[3]
-        case _:
-            print("Encoder type not supported.")
-            exit(1)
+    if args.encoder_type in models:
+        model = models[args.encoder_type]
+    else:
+        print("Encoder type not supported.")
+        exit(1)
 
-    if not Path(model.checkpoint).is_file():
-        print(f"Path to model checkpoint '{model.checkpoint}' not found.")
+    if Path(args.checkpoint).is_file():
+        model.checkpoint = args.checkpoint
+    else:
+        print(f"Path to model checkpoint '{args.checkpoint}' not found.")
         exit(1)
 
     # Blocks that can be reliably exported to ONNX
@@ -798,13 +785,17 @@ if __name__ == "__main__":
         "memory-attention",
     ]
 
+    if args.opset < 24:
+        print(f"ONNX export with opset {args.opset} may fail for some blocks due to unsupported operators. "
+              f"Consider using opset 24 or higher for better compatibility.")
+
     if args.export == "all":
         for b in exportable_blocks:
             print(f"\nExporting block: {b}")
-            export_model_block(model, b, out_dir, args.img_shape,
+            export_model_block(model, b, out_dir, model.img_shape,
                                use_simplify=args.simplify, opset_version=args.opset)
     else:
         print(f"\nExporting block: {args.export}")
-        export_model_block(model, args.export, out_dir, args.img_shape,
+        export_model_block(model, args.export, out_dir, model.img_shape,
                            use_simplify=args.simplify, opset_version=args.opset)
     print("done.")
