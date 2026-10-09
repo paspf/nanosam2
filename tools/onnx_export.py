@@ -27,6 +27,7 @@ from nanosam2.sam2.build_sam import build_sam2_video_predictor
 import numpy as np
 import onnxruntime as ort
 import onnxsim
+from typing import Any, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ class ImageEncoderONNXWrapper(nn.Module):
         backbone_fpn_raw_1 – (B, C, H/8,  W/8)  raw 256-ch feature (pre conv_s1)
     """
 
-    def __init__(self, predictor):
+    def __init__(self, predictor: nn.Module):
         super().__init__()
         self.image_encoder = predictor.image_encoder
         self.use_high_res = predictor.use_high_res_features_in_sam
@@ -101,7 +102,7 @@ class SAMHeadsONNXWrapper(nn.Module):
         object_score_logits  – (B, 1)  raw logits for object presence
     """
 
-    def __init__(self, predictor):
+    def __init__(self, predictor: nn.Module):
         super().__init__()
         self.sam_prompt_encoder = predictor.sam_prompt_encoder
         self.sam_mask_decoder   = predictor.sam_mask_decoder
@@ -187,7 +188,7 @@ class MemoryEncoderONNXWrapper(nn.Module):
         maskmem_pos_enc  – (B, mem_dim, H/16, W/16)
     """
 
-    def __init__(self, predictor):
+    def __init__(self, predictor: nn.Module):
         super().__init__()
         self.memory_encoder = predictor.memory_encoder
 
@@ -217,7 +218,7 @@ class MemoryAttentionONNXWrapper(nn.Module):
         attended    – (HW, B, C)       memory-conditioned features (seq-first)
     """
 
-    def __init__(self, predictor):
+    def __init__(self, predictor: nn.Module):
         super().__init__()
         self.memory_attention = predictor.memory_attention
         hw16 = getattr(predictor, '_export_hw16', None)
@@ -273,7 +274,7 @@ class MemoryAttentionONNXWrapper(nn.Module):
 # RoPE helper
 # ---------------------------------------------------------------------------
 
-def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
+def _make_rope_onnx_safe(module: nn.Module, hw16: Optional[int] = None) -> None:
     """
     Patch all RoPEAttention layers inside *module* so they use real arithmetic
     instead of complex ops, making them compatible with the dynamo ONNX exporter.
@@ -339,7 +340,13 @@ def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
         # RoPE to all tokens unconditionally.
         if child.rope_k_repeat:
             def _make_fwd_cross():
-                def _fwd(self, q, k, v, rope_k_mask=None):
+                def _fwd(
+                    self,
+                    q: torch.Tensor,
+                    k: torch.Tensor,
+                    v: torch.Tensor,
+                    rope_k_mask: Optional[torch.Tensor] = None,
+                ):
                     q = self.q_proj(q)
                     k = self.k_proj(k)
                     v = self.v_proj(v)
@@ -357,7 +364,13 @@ def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
             child.forward = types.MethodType(_make_fwd_cross(), child)
         else:
             def _make_fwd_self():
-                def _fwd(self, q, k, v, num_k_exclude_rope=0):
+                def _fwd(
+                    self,
+                    q: torch.Tensor,
+                    k: torch.Tensor,
+                    v: torch.Tensor,
+                    num_k_exclude_rope: int = 0,
+                ):
                     q = self.q_proj(q)
                     k = self.k_proj(k)
                     v = self.v_proj(v)
@@ -373,7 +386,7 @@ def _make_rope_onnx_safe(module: nn.Module, hw16: int = None) -> None:
             child.forward = types.MethodType(_make_fwd_self(), child)
 
 
-def modify_filename(file_path, str_extension="_modified") -> Path:
+def modify_filename(file_path: Path | str, str_extension: str = "_modified") -> Path:
     """
     Add the string str_extension before the file extension to the name of a file.
     """
@@ -389,7 +402,9 @@ def modify_filename(file_path, str_extension="_modified") -> Path:
 
     return new_file_name
 
-def remove_duplicate_outputs(model_path:str, out_file:str=None) -> onnx.ModelProto:
+def remove_duplicate_outputs(
+    model_path: str, out_file: Optional[str] = None
+) -> onnx.ModelProto:
     """
     Remove duplicate output nodes from an onnx model.
     Nodes are considered as duplicated if they have the same name and output shape.
@@ -428,7 +443,7 @@ def remove_duplicate_outputs(model_path:str, out_file:str=None) -> onnx.ModelPro
     return {"onnx_model":model, "out_file": out_file}
 
 
-def analyze_onnx_model(model:onnx.ModelProto):
+def analyze_onnx_model(model: onnx.ModelProto):
     """
     Identify the in- and output nodes of a onnx model.
     """
@@ -444,7 +459,7 @@ def analyze_onnx_model(model:onnx.ModelProto):
         output_shape = [dim.dim_value for dim in output.type.tensor_type.shape.dim]
         print(f'Output Name: {output_name}, Shape: {output_shape}')
 
-def test_onnx_model(model_path:Path, input):
+def test_onnx_model(model_path: Path, input: np.ndarray):
     session = ort.InferenceSession(str(model_path))
     input_name = session.get_inputs()[0].name
     outputs = session.run(None, {input_name: input})
@@ -454,7 +469,7 @@ def test_onnx_model(model_path:Path, input):
         print(f"{i} | shape: {output.shape}")
     return output
 
-def determine_torch_output_shapes(y, id=0):
+def determine_torch_output_shapes(y: Any, id: int = 0):
     """
     Determine the output shapes of the feature map produced by a torch inference.
     """
@@ -471,7 +486,12 @@ def determine_torch_output_shapes(y, id=0):
     else:
         print(f"out | - {y.shape}")
 
-def test_torch_model(torch_model:torch.nn, input, silent=False, use_unpack_operator=False) -> bool:
+def test_torch_model(
+    torch_model: torch.nn,
+    input: tuple[torch.Tensor, ...] | list[torch.Tensor],
+    silent: bool = False,
+    use_unpack_operator: bool = False,
+) -> bool:
     if use_unpack_operator: y = torch_model(*input)
     else: y = torch_model(input)
     if not silent:
@@ -479,7 +499,11 @@ def test_torch_model(torch_model:torch.nn, input, silent=False, use_unpack_opera
     return True
 
 
-def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list = [3, 512, 512]):
+def get_block_and_inputs(
+    predictor: torch.nn.Module,
+    block: str,
+    img_shape: list[int] = [3, 512, 512],
+):
     """Return (torch_model, torch_input, use_unpack_operator, input_names, output_names, dynamic_shapes)."""
     input_names         = ["input"]
     output_names        = None   # None means let torch auto-name
@@ -623,7 +647,9 @@ def get_block_and_inputs(predictor: torch.nn.Module, block: str, img_shape: list
 
     return (torch_model, torch_input, use_unpack_operator, input_names, output_names, d_shapes)
 
-def save_model_constants(predictor, model_name: str, out_dir: Path) -> Path:
+def save_model_constants(
+    predictor: nn.Module, model_name: str, out_dir: Path
+) -> Path:
     """
     Extract the learned constants (embeddings, tpos enc, etc.) from an already-
     loaded PyTorch predictor and save them as a .npz file in *out_dir*.
@@ -631,7 +657,7 @@ def save_model_constants(predictor, model_name: str, out_dir: Path) -> Path:
     The resulting file is loaded automatically by NanoSAM2OnnxPredictor at
     runtime — no PyTorch is required after this step.
     """
-    def t(x): return x.detach().cpu().numpy().astype(np.float32)
+    def t(x: torch.Tensor): return x.detach().cpu().numpy().astype(np.float32)
 
     no_mem_embed     = t(predictor.no_mem_embed)
     no_mem_pos_enc   = t(predictor.no_mem_pos_enc)
@@ -665,7 +691,7 @@ def save_model_constants(predictor, model_name: str, out_dir: Path) -> Path:
     return out_path
 
 
-def export_model_block(m: ModelSource, block: str, out_dir: Path, img_shape: list,
+def export_model_block(m: ModelSource, block: str, out_dir: Path, img_shape: list[int],
                        use_simplify: bool = False, opset_version: int = 24):
     """
     Export a building block of nanosam2 to ONNX.  Not all blocks can be converted.
@@ -798,4 +824,4 @@ if __name__ == "__main__":
         print(f"\nExporting block: {args.export}")
         export_model_block(model, args.export, out_dir, model.img_shape,
                            use_simplify=args.simplify, opset_version=args.opset)
-    print("done.")
+    print(f"PyTorch model {args.checkpoint} exported successfully to {out_dir}.")
