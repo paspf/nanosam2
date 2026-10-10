@@ -170,3 +170,8 @@ model_exports2/*
 videos/*
 mask_output/*
 weights/*
+
+onnx_export_casevit/
+onnx_export_mobilenet/
+onnx_export_resnet_512/
+onnx_export_resnet_1024/
