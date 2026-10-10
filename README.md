@@ -30,7 +30,7 @@ You can find and download pretrained nanosam2 checkpoints [here](https://drive.g
 
 ## Inference Demos
 
-All inference demos are executed on the [Bedroom](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/notebooks/videos/bedroom.mp4) video file, shared in the original [sam2](https://github.com/facebookresearch/sam2) repository. 
+All inference demos are executed on the [Bedroom](https://github.com/facebookresearch/sam2/blob/2b90b9f5ceec907a1c18123530e92e794ad901a4/notebooks/videos/bedroom.mp4) video file, shared in the original [sam2](https://github.com/facebookresearch/sam2) repository. There is also a [WinUI3 App](https://github.com/paspf/nanosam2-winui) using the ONNX variant of NanoSAM2.
 
 ### Video Predictor
 
